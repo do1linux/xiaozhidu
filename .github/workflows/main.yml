@@ -13,7 +13,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # 仅拉取最新提交
+          fetch-depth: 1
 
       - name: Set Up Python 3.10
         uses: actions/setup-python@v5
@@ -21,17 +21,18 @@ jobs:
           python-version: "3.10"
 
       # -------------------
-      # 1. 安装系统依赖（关键步骤）
+      # 1. 修复系统依赖安装
       # -------------------
       - name: Install System Dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y \
             libgirepository1.0-dev \
-            gtk-3-dev \
-            cairo-dev \
+            libgtk-3-dev \
+            libcairo2-dev \
             python3-dev \
-            libxml2-dev
+            libxml2-dev \
+            portaudio19-dev  # 音频支持
 
       # -------------------
       # 2. 安装Python依赖
@@ -50,19 +51,30 @@ jobs:
           echo "MUSIC_API_KEY=${{ secrets.MUSIC_API_KEY }}" >> $GITHUB_ENV
 
       # -------------------
-      # 4. 启动MCP服务
+      # 4. 启动MCP服务（添加id以便后续引用）
       # -------------------
       - name: Start MCP Service
+        id: start-service
         run: |
-          nohup /opt/hostedtoolcache/Python/3.10.18/x64/bin/python music_player.py > music_player.log 2>&1 &
-          sleep 15  # 延长等待时间
+          # 使用虚拟音频设备（针对无头环境）
+          export DISPLAY=:0
+          
+          # 启动服务
+          nohup python music_player.py > music_player.log 2>&1 &
+          echo "服务启动中，等待15秒..."
+          sleep 15
+          
+          # 检查进程
           if pgrep -f "python music_player.py" > /dev/null; then
             echo "✅ MCP服务已成功启动！"
             echo "service-status=running" >> $GITHUB_OUTPUT
           else
             echo "❌ MCP服务启动失败！"
             echo "service-status=failed" >> $GITHUB_OUTPUT
-            tail -n 100 music_player.log  # 输出日志尾部
+            echo "=== 服务日志 ==="
+            tail -n 100 music_player.log
+            echo "=== 进程检查 ==="
+            ps aux | grep python
             exit 1
           fi
 
@@ -82,10 +94,15 @@ jobs:
       - name: Verify Service Health
         if: steps.start-service.outputs.service-status == 'running'
         run: |
+          echo "🔍 检查服务健康状态..."
           # 检查日志中是否有成功标识
           if grep -q "🚀 启动服务，连接到MCP端点" music_player.log; then
             echo "🟢 服务健康检查通过！"
+            echo "=== 最新日志 ==="
+            tail -n 20 music_player.log
           else
             echo "🔴 服务健康检查失败！"
+            echo "=== 错误日志 ==="
+            tail -n 50 music_player.log
             exit 1
           fi
