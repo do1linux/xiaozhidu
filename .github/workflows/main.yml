@@ -45,20 +45,30 @@ jobs:
           echo "MUSIC_API_KEY=${{ secrets.MUSIC_API_KEY }}" >> $GITHUB_ENV
 
       # -------------------
-      # 4. 启动MCP服务
+      # 4. 启动MCP服务（使用更长的等待时间）
       # -------------------
       - name: Start MCP Service
         id: start-service
         run: |
           # 启动服务
           nohup python music_player.py > music_player.log 2>&1 &
-          echo "服务启动中，等待10秒..."
-          sleep 10
+          echo "服务启动中，等待20秒..."
+          sleep 20
           
           # 检查进程
           if pgrep -f "python music_player.py" > /dev/null; then
-            echo "✅ MCP服务已成功启动！"
+            echo "✅ MCP服务进程正在运行！"
             echo "service-status=running" >> $GITHUB_OUTPUT
+            
+            # 检查连接状态
+            echo "🔍 检查连接状态..."
+            if grep -q "成功连接到MCP服务器" music_player.log; then
+              echo "✅ MCP服务连接成功！"
+            else
+              echo "⚠️ MCP服务进程运行但连接状态未知"
+              echo "=== 最新日志 ==="
+              tail -n 20 music_player.log
+            fi
           else
             echo "❌ MCP服务启动失败！"
             echo "service-status=failed" >> $GITHUB_OUTPUT
@@ -75,18 +85,28 @@ jobs:
         run: |
           echo "🔍 检查服务健康状态..."
           if grep -q "🚀 启动服务，连接到MCP端点" music_player.log; then
-            echo "🟢 服务健康检查通过！"
+            echo "🟢 服务启动成功！"
             echo "=== 最新日志 ==="
-            tail -n 10 music_player.log
+            tail -n 15 music_player.log
           else
-            echo "🔴 服务健康检查失败！"
+            echo "🔴 服务启动检查失败！"
             echo "=== 错误日志 ==="
             tail -n 30 music_player.log
             exit 1
           fi
 
       # -------------------
-      # 6. 上传日志文件
+      # 6. 保持服务运行（用于测试）
+      # -------------------
+      - name: Keep Service Running
+        if: steps.start-service.outputs.service-status == 'running'
+        run: |
+          echo "⏳ 保持服务运行60秒用于测试..."
+          sleep 60
+          echo "✅ 服务运行测试完成"
+
+      # -------------------
+      # 7. 上传日志文件
       # -------------------
       - name: Upload Service Logs
         uses: actions/upload-artifact@v4
