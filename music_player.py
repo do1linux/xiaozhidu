@@ -6,23 +6,27 @@ import os
 import logging
 import threading
 from dotenv import load_dotenv
+import sys
 
 # ------------------- 1. 基础初始化 -------------------
-load_dotenv()  # 加载本地.env文件（可选，优先于环境变量）
+load_dotenv()
 mcp = FastMCP("MusicPlayer")
 logger = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 
-# ------------------- 2. 配置参数（关键：从环境变量读TOKEN） -------------------
-_MUSIC_API_URL = " https://api.yaohud.cn/api/music/wy "
-_MUSIC_API_KEY = os.getenv("MUSIC_API_KEY")  # 音乐API Key（可选，若需）
-# 从GitHub Secrets读取MCP服务Token，拼接WSS端点
-MCP_WSS_TOKEN = os.getenv("MCP_WSS_TOKEN")  # 必须：GitHub Actions中设置的Secret
-if not MCP_WSS_TOKEN:
-    raise ValueError("MCP_WSS_TOKEN环境变量未配置！")
-MCP_WSS_ENDPOINT = f"wss://api.xiaozhi.me/mcp/?token={MCP_WSS_TOKEN}"  # 动态生成接入点
+# ------------------- 2. 配置参数 -------------------
+_MUSIC_API_URL = "https://api.yaohud.cn/api/music/wy"
+_MUSIC_API_KEY = os.getenv("MUSIC_API_KEY")
+MCP_WSS_TOKEN = os.getenv("MCP_WSS_TOKEN")
 
-# ------------------- 3. 核心工具：播放音乐（优化播放异常处理） -------------------
+if not MCP_WSS_TOKEN:
+    logger.error("MCP_WSS_TOKEN环境变量未配置！")
+    # 在服务器环境中，如果没有token，我们仍然启动但记录警告
+    MCP_WSS_ENDPOINT = None
+else:
+    MCP_WSS_ENDPOINT = f"wss://api.xiaozhi.me/mcp/?token={MCP_WSS_TOKEN}"
+
+# ------------------- 3. 核心工具：播放音乐（服务器环境适配） -------------------
 @mcp.tool(name="play_music")
 def play_music(song_name: str) -> str:
     clean_name = song_name.strip()
@@ -36,47 +40,75 @@ def play_music(song_name: str) -> str:
             api_params = {"key": _MUSIC_API_KEY, "msg": clean_name, "n": 1}
             api_resp = requests.post(_MUSIC_API_URL, params=api_params, timeout=10)
             api_resp.raise_for_status()
-            music_url = api_resp.json().get("data", {}).get("musicurl")
+            
+            music_data = api_resp.json().get("data", {})
+            music_url = music_data.get("musicurl")
             if not music_url:
+                # 尝试其他可能的字段名
+                music_url = music_data.get("url") or music_data.get("music_url")
+            
+            if not music_url:
+                logger.error(f"未找到歌曲URL，响应数据: {music_data}")
                 return "❌ 错误：未找到歌曲URL"
 
             # 2. 下载临时文件
             logger.info(f"⬇️ 下载歌曲：{clean_name}")
             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
-                tmp_file.write(requests.get(music_url, timeout=10).content)
+                music_resp = requests.get(music_url, timeout=30)
+                music_resp.raise_for_status()
+                tmp_file.write(music_resp.content)
                 tmp_path = tmp_file.name
 
-            # 3. 播放（捕获无音频设备的异常）
+            # 3. 播放（服务器环境适配）
             logger.info(f"▶️ 尝试播放：{clean_name}")
             try:
+                # 在服务器环境中，playsound可能会失败
                 playsound(tmp_path)
+                play_result = f"🎵 播放成功：{clean_name}"
             except Exception as e:
-                logger.warning(f"⚠️ 播放失败（无音频设备？）：{str(e)}")
-                return f"🎵 歌曲已下载，但播放失败（无音频设备）：{clean_name}"
-            os.unlink(tmp_path)
-            logger.info(f"✅ 播放完成：{clean_name}")
+                logger.warning(f"⚠️ 播放失败（服务器无音频设备）：{str(e)}")
+                # 在服务器环境中，我们返回成功但注明无法播放
+                play_result = f"🎵 歌曲已准备就绪（服务器环境无法播放音频）：{clean_name}"
+            
+            # 清理临时文件
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+                
+            logger.info(f"✅ 处理完成：{clean_name}")
+            return play_result
 
-            return f"🎵 播放成功：{clean_name}"
-
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"🌐 API调用失败：{str(e)}")
-            return f"❌ 网络错误：音乐API返回状态码{e.response.status_code}"
-        except KeyError:
-            logger.error("🔑 API数据格式错误（可能Key失效）")
-            return "❌ 错误：音乐API返回数据异常"
+        except requests.exceptions.RequestException as e:
+            logger.error(f"🌐 网络请求失败：{str(e)}")
+            return f"❌ 网络错误：{str(e)}"
         except Exception as e:
-            logger.error(f"⚠️ 未知错误：{str(e)}")
+            logger.error(f"⚠️ 处理歌曲时发生错误：{str(e)}")
             return f"❌ 播放失败：{str(e)}"
 
-# ------------------- 4. 启动服务（保持后台运行） -------------------
+# ------------------- 4. 服务器环境健康检查 -------------------
+@mcp.tool(name="health_check")
+def health_check() -> str:
+    """检查服务健康状态"""
+    return "✅ MCP音乐播放器服务运行正常（服务器模式）"
+
+# ------------------- 5. 启动服务 -------------------
 if __name__ == "__main__":
-    # 配置日志（写入文件+控制台）
+    # 配置日志
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.FileHandler("music_player.log"), logging.StreamHandler()]
     )
+    
+    if not MCP_WSS_ENDPOINT:
+        logger.error("❌ 无法启动：MCP_WSS_TOKEN未配置")
+        logger.info("💡 请在GitHub仓库的Settings -> Secrets中配置MCP_WSS_TOKEN")
+        sys.exit(1)
+    
     logger.info(f"🚀 启动服务，连接到MCP端点：{MCP_WSS_ENDPOINT}")
+    logger.info("🏭 运行环境：GitHub Actions服务器")
+    
     try:
         mcp.run(
             transport="websocket",
@@ -85,4 +117,4 @@ if __name__ == "__main__":
         )
     except Exception as e:
         logger.critical(f"💥 服务启动失败：{str(e)}")
-        os._exit(1)
+        sys.exit(1)
