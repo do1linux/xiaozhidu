@@ -7,6 +7,7 @@ import threading
 from dotenv import load_dotenv
 import json
 import time
+import asyncio
 
 # ------------------- 1. 基础初始化 -------------------
 load_dotenv()
@@ -219,6 +220,27 @@ def cleanup() -> str:
     return "✅ 资源清理完成"
 
 # ------------------- 6. 启动服务 -------------------
+async def main():
+    """主异步函数"""
+    if not MCP_WSS_ENDPOINT:
+        logger.error("❌ 无法启动：MCP_WSS_TOKEN未配置")
+        logger.info("💡 请在GitHub仓库的Settings -> Secrets中配置MCP_WSS_TOKEN")
+        return
+
+    logger.info(f"🚀 启动服务，连接到MCP端点：{MCP_WSS_ENDPOINT}")
+    logger.info("🏭 运行环境：GitHub Actions服务器（无音频支持）")
+    logger.info("📋 可用功能：搜索音乐、下载音乐、获取元数据")
+    
+    try:
+        # 正确的 FastMCP WebSocket 连接方式
+        async with mcp.run_over_websocket(url=MCP_WSS_ENDPOINT) as session:
+            logger.info("✅ 成功连接到MCP服务器")
+            # 保持连接
+            await session.wait_until_done()
+    except Exception as e:
+        logger.critical(f"💥 服务启动失败：{str(e)}")
+        raise
+
 if __name__ == "__main__":
     # 配置日志
     logging.basicConfig(
@@ -227,21 +249,10 @@ if __name__ == "__main__":
         handlers=[logging.FileHandler("music_player.log"), logging.StreamHandler()]
     )
     
-    if not MCP_WSS_ENDPOINT:
-        logger.error("❌ 无法启动：MCP_WSS_TOKEN未配置")
-        logger.info("💡 请在GitHub仓库的Settings -> Secrets中配置MCP_WSS_TOKEN")
-        exit(1)
-    
-    logger.info(f"🚀 启动服务，连接到MCP端点：{MCP_WSS_ENDPOINT}")
-    logger.info("🏭 运行环境：GitHub Actions服务器（无音频支持）")
-    logger.info("📋 可用功能：搜索音乐、下载音乐、获取元数据")
-    
     try:
-        mcp.run(
-            transport="websocket",
-            endpoint=MCP_WSS_ENDPOINT,
-            cors_allowed_origins=["*"]
-        )
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("👋 服务被用户中断")
     except Exception as e:
-        logger.critical(f"💥 服务启动失败：{str(e)}")
+        logger.critical(f"💥 服务异常退出：{str(e)}")
         exit(1)
