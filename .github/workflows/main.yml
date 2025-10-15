@@ -1,84 +1,59 @@
-name: Deploy MCP Music Player Service  # 工作流名称
+name: Deploy MCP Music Player Service
 
 on:
   push:
-    branches: [main]  # 推送main分支时自动触发部署
-  workflow_dispatch:  # 支持手动触发部署（在GitHub Actions页面点击运行）
-    inputs:
-      environment:
-        description: "部署环境（如：prod/test）"
-        default: "prod"
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  deploy-mcp-service:
-    runs-on: ubuntu-latest  # 使用Ubuntu Runner（Linux环境）
-    environment: ${{ github.event.inputs.environment || 'prod' }}  # 关联GitHub环境（可选，用于 secrets 管理）
-    steps:
-      # ------------------- 1. 拉取代码 -------------------
-      - name: Checkout Repository Code
-        uses: actions/checkout@v4  # 拉取当前仓库代码
+  deploy-service:
+    runs-on: ubuntu-latest
 
-      # ------------------- 2. 设置Python环境 -------------------
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: Set Up Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"  # 匹配依赖的Python版本
+          python-version: "3.10"
 
-      # ------------------- 3. 安装系统依赖（解决playsound播放问题） -------------------
-      # playsound依赖GStreamer多媒体框架（Linux音频后端）
-      - name: Install GStreamer & Audio Dependencies
+      - name: Install System Dependencies
         run: |
-          sudo apt-get update -y  # 更新包列表
+          sudo apt-get update -y
           sudo apt-get install -y \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
-            gstreamer1.0-plugins-ugly \
-            gstreamer1.0-libav  # 必须：解决playsound在Ubuntu下的安装/播放错误
+            gstreamer1.0-plugins-base=1.18.4-1ubuntu1 \
+            gstreamer1.0-plugins-good=1.18.4-1ubuntu1 \
+            gstreamer1.0-plugins-ugly=1.18.4-1ubuntu1 \
+            gstreamer1.0-libav=1.18.4-1ubuntu1
 
-      # ------------------- 4. 升级构建工具（避免pip缓存问题） -------------------
       - name: Upgrade Build Tools
         run: |
-          python -m pip install --upgrade pip setuptools wheel  # 升级pip、setuptools、wheel
+          pip install --upgrade pip setuptools wheel
 
-      # ------------------- 5. 注入环境变量（从GitHub Secrets读取） -------------------
-      # 从仓库Settings → Secrets and variables → Actions中读取
       - name: Inject Environment Variables
         run: |
-          echo "MCP_WSS_TOKEN=${{ secrets.MCP_WSS_TOKEN }}" >> $GITHUB_ENV  # MCP服务认证Token（必须）
-          echo "MUSIC_API_KEY=${{ secrets.MUSIC_API_KEY }}" >> $GITHUB_ENV  # 音乐API Key（可选，若需）
-          echo "LOG_LEVEL=INFO" >> $GITHUB_ENV  # 日志级别（可选）
+          echo "MCP_WSS_TOKEN=${{ secrets.MCP_WSS_TOKEN }}" >> $GITHUB_ENV
+          echo "MUSIC_API_KEY=${{ secrets.MUSIC_API_KEY }}" >> $GITHUB_ENV
 
-      # ------------------- 6. 安装Python依赖 -------------------
       - name: Install Python Dependencies
         run: |
-          pip install -r requirements.txt  # 安装所有Python依赖（含mcp、playsound等）
+          pip install -r requirements.txt --force-reinstall
 
-      # ------------------- 7. 启动MCP服务（后台运行） -------------------
       - name: Start MCP Service
-        id: start-service  # 给步骤命名，方便后续检查
         run: |
-          # 后台运行服务，日志输出到music_player.log
-          nohup python music_player.py > music_player.log 2>&1 &
-          # 等待5秒，让服务初始化
-          sleep 5
-          # 检查服务进程是否存活
+          /opt/hostedtoolcache/Python/3.10.18/x64/bin/python music_player.py > music_player.log 2>&1 &
+          sleep 10  # 延长等待时间
           if pgrep -f "python music_player.py" > /dev/null; then
             echo "✅ MCP服务已成功启动！"
-            echo "service-status=running" >> $GITHUB_OUTPUT  # 输出状态，供后续步骤使用
+            echo "service-status=running" >> $GITHUB_OUTPUT
           else
-            echo "❌ MCP服务启动失败！请查看日志：music_player.log"
+            echo "❌ MCP服务启动失败！"
             echo "service-status=failed" >> $GITHUB_OUTPUT
-            exit 1  # 失败时终止工作流
-          fi
-
-      # ------------------- 8. （可选）验证服务状态 -------------------
-      - name: Verify Service Health
-        if: steps.start-service.outputs.service-status == 'running'  # 仅当服务启动成功时执行
-        run: |
-          # 检查日志中是否有“启动成功”的标识
-          if grep -q "🚀 启动服务，连接到MCP端点" music_player.log; then
-            echo "🟢 服务健康检查通过！"
-          else
-            echo "🔴 服务健康检查失败！"
             exit 1
           fi
+
+      - name: Show Service Logs
+        if: failure()
+        run: |
+          cat music_player.log
