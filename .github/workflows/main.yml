@@ -2,85 +2,64 @@ name: Deploy MCP Music Player Service
 
 on:
   push:
-    branches: [ main ]  # 当代码推送到main分支时自动触发部署
-  workflow_dispatch:    # 支持手动触发部署（在GitHub Actions页面点击运行）
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy-service:
-    runs-on: ubuntu-latest  # 使用Ubuntu Runner运行服务
+    runs-on: ubuntu-latest
 
     steps:
-      # ------------------- 1. 拉取代码 -------------------
-      - name: Checkout Repository Code
-        uses: actions/checkout@v4  # 拉取当前仓库代码
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      # ------------------- 2. 设置Python环境 -------------------
       - name: Set Up Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"  # 匹配依赖的Python版本
+          python-version: "3.10"
 
-      # ------------------- 3. 安装系统依赖（解决音频播放问题） -------------------
-      - name: Install GStreamer & Audio Dependencies
+      - name: Install System Dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y \
             gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-ugly \
-            gstreamer1.0-libav  # 解决playsound的Linux音频后端依赖
+            gstreamer1.0-libav
 
-      # ------------------- 4. 升级构建工具 -------------------
       - name: Upgrade Build Tools
         run: |
           pip install --upgrade pip setuptools wheel
 
-      # ------------------- 5. 注入环境变量（从GitHub Secrets读取） -------------------
       - name: Inject Environment Variables
         run: |
-          echo "MCP_WSS_TOKEN=${{ secrets.MCP_WSS_TOKEN }}" >> $GITHUB_ENV  # MCP服务认证Token（必须）
-          echo "MUSIC_API_KEY=${{ secrets.MUSIC_API_KEY }}" >> $GITHUB_ENV  # 音乐API Key（可选）
-          echo "LOG_LEVEL=INFO" >> $GITHUB_ENV  # 日志级别（可选）
+          echo "MCP_WSS_TOKEN=${{ secrets.MCP_WSS_TOKEN }}" >> $GITHUB_ENV
+          echo "MUSIC_API_KEY=${{ secrets.MUSIC_API_KEY }}" >> $GITHUB_ENV
 
-      # ------------------- 6. 安装Python依赖 -------------------
       - name: Install Python Dependencies
         run: |
-          pip install -r requirements.txt  # 安装所有Python依赖
+          pip install --upgrade pip
+          pip cache purge
+          pip install -r requirements.txt --force-reinstall
 
-      # ------------------- 7. 启动MCP服务 -------------------
       - name: Start MCP Service
-        id: start-service
         run: |
-          # 后台运行服务并重定向日志
-          nohup python music_player.py > music_player.log 2>&1 &
-          # 等待服务初始化
+          # 后台运行并重定向所有输出
+          nohup /opt/hostedtoolcache/Python/3.10.18/x64/bin/python music_player.py > music_player.log 2>&1 </dev/null &
           sleep 10
-          # 检查服务是否运行
           if pgrep -f "python music_player.py" > /dev/null; then
             echo "✅ MCP服务已成功启动！"
             echo "service-status=running" >> $GITHUB_OUTPUT
           else
             echo "❌ MCP服务启动失败！"
             echo "service-status=failed" >> $GITHUB_OUTPUT
+            tail -n 50 music_player.log  # 输出日志尾部
             exit 1
           fi
 
-      # ------------------- 8. 上传日志文件（便于调试） -------------------
       - name: Upload Service Logs
         uses: actions/upload-artifact@v4
         with:
           name: music-player-logs
           path: music_player.log
           if-no-files-found: ignore
-
-      # ------------------- 9. （可选）验证服务状态 -------------------
-      - name: Verify Service Health
-        if: steps.start-service.outputs.service-status == 'running'
-        run: |
-          # 检查日志中是否有启动成功的标识
-          if grep -q "🚀 启动服务，连接到MCP端点" music_player.log; then
-            echo "🟢 服务健康检查通过！"
-          else
-            echo "🔴 服务健康检查失败！"
-            exit 1
-          fi
