@@ -1,0 +1,58 @@
+name: Deploy MCP Music Player Service
+
+on:
+  push:
+    branches: [ main ]  # 推送main分支时触发部署
+  workflow_dispatch:    # 手动触发部署（可选）
+
+jobs:
+  deploy-service:
+    runs-on: ubuntu-latest  # 使用Ubuntu Runner运行服务
+
+    steps:
+      # 1. 拉取代码
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. 安装Python环境
+      - name: Set Up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"  # 匹配依赖版本
+
+      # 3. 安装依赖
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt  # 安装mcp、requests等
+
+      # 4. 注入环境变量（从GitHub Secrets读取）
+      - name: Inject Environment Variables
+        run: |
+          echo "MUSIC_API_KEY=${{ secrets.MUSIC_API_KEY }}" >> $GITHUB_ENV  # 可选
+          echo "MCP_WSS_TOKEN=${{ secrets.MCP_WSS_TOKEN }}" >> $GITHUB_ENV    # 必须
+
+      # 5. 启动MCP服务（后台运行）
+      - name: Start MCP Service
+        run: |
+          # 后台运行服务，日志输出到music_player.log
+          nohup python music_player.py > music_player.log 2>&1 &
+          # 等待5秒，检查进程是否存活
+          sleep 5
+          if pgrep -f "python music_player.py" > /dev/null; then
+            echo "✅ 服务已成功启动！"
+          else
+            echo "❌ 服务启动失败！请查看日志：music_player.log"
+            exit 1
+          fi
+
+      # 6. （可选）验证服务状态
+      - name: Verify Service Status
+        run: |
+          # 检查服务是否仍在运行
+          if pgrep -f "python music_player.py" > /dev/null; then
+            echo "🟢 服务正在运行..."
+          else
+            echo "🔴 服务已停止！"
+            exit 1
+          fi
