@@ -11,7 +11,7 @@ on:
 jobs:
   run-music-service:
     runs-on: ubuntu-latest
-    timeout-minutes: 240  # 4小时，接近GitHub Actions限制
+    timeout-minutes: 240  # 4小时
     
     steps:
     - name: Checkout code
@@ -25,7 +25,7 @@ jobs:
     - name: Install dependencies
       run: |
         pip install --upgrade pip
-        pip install mcp fastmcp requests python-dotenv
+        pip install mcp fastmcp requests python-dotenv flask
 
     - name: Setup environment
       env:
@@ -53,13 +53,17 @@ jobs:
         echo $! > service.pid
         
         echo "⏳ 等待服务启动..."
-        sleep 10
+        sleep 15
         
         # 检查服务是否运行
         if ps -p $(cat service.pid) > /dev/null; then
-          echo "✅ 音乐服务已启动并连接到小智AI"
+          echo "✅ 音乐服务已启动"
           echo "=== 服务日志前20行 ==="
           head -20 xiaozhi_music.log
+          
+          # 测试HTTP服务
+          echo "🔧 测试HTTP服务..."
+          curl -s http://localhost:8080/status || echo "HTTP服务测试失败"
         else
           echo "❌ 服务启动失败"
           echo "=== 错误日志 ==="
@@ -91,6 +95,8 @@ jobs:
           if [ $((i % 5)) -eq 0 ]; then
             echo "=== 最近日志 ==="
             tail -5 xiaozhi_music.log
+            echo "=== HTTP状态检查 ==="
+            curl -s http://localhost:8080/status | head -2 || echo "HTTP检查失败"
           fi
           
           sleep 60
