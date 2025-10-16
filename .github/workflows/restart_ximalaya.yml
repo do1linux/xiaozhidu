@@ -1,0 +1,110 @@
+name: Auto Restart Ximalaya Service
+
+on:
+  workflow_dispatch: # 手动触发
+  repository_dispatch: # 支持API触发
+    types: [restart-ximalaya-service]
+
+env:
+  MCP_ENDPOINT: ${{ secrets.MCP_ENDPOINT }}
+
+jobs:
+  auto-restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Check Beijing time
+      id: time_check
+      run: |
+        current_hour_utc=$(date -u +%H)
+        current_hour_beijing=$(( (current_hour_utc + 8) % 24 ))
+        
+        echo "当前UTC时间: $(date -u)"
+        echo "当前北京时间: 约 $current_hour_beijing 点"
+        
+        if [ $current_hour_beijing -ge 0 ] && [ $current_hour_beijing -lt 6 ]; then
+          echo "should_run=false" >> $GITHUB_OUTPUT
+        else
+          echo "should_run=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Skip restart in quiet hours
+      if: steps.time_check.outputs.should_run == 'false'
+      run: |
+        echo "🌙 当前为静默时段（北京时间0-6点），跳过听书服务重启"
+        exit 0
+
+    - name: Stop any existing Ximalaya service
+      if: steps.time_check.outputs.should_run == 'true'
+      run: |
+        echo "🛑 停止可能存在的听书服务进程..."
+        # 查找并停止ximalaya服务相关进程
+        pkill -f "mcp_pipe.py ximalaya.py" || true
+        sleep 2
+        echo "✅ 听书服务清理完成"
+
+    - name: Start new Ximalaya service instance
+      if: steps.time_check.outputs.should_run == 'true'
+      run: |
+        echo "🚀 启动新的听书服务实例..."
+        echo "听书服务重启时间: $(date)" > ximalaya_restart_info.txt
+        
+        # 启动新实例
+        nohup python mcp_pipe.py ximalaya.py > ximalaya_service_restart.log 2>&1 &
+        echo $! > ximalaya_service_restart.pid
+        
+        echo "✅ 新听书服务实例已启动，PID: $(cat ximalaya_service_restart.pid)"
+        echo "📡 重新连接小智AI听书服务..."
+
+    - name: Wait and monitor Ximalaya service
+      if: steps.time_check.outputs.should_run == 'true'
+      run: |
+        echo "⏰ 听书服务将运行5小时50分钟..."
+        
+        # 等待5小时50分钟 (21000秒)
+        sleep 21000
+        
+        echo "🔄 听书服务到达重启时间，准备下一次重启..."
+        
+        # 记录重启信息
+        echo "计划重启时间: $(date)" >> ximalaya_restart_log.txt
+
+    - name: Trigger next restart cycle
+      if: steps.time_check.outputs.should_run == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          try {
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'restart_ximalaya.yml',
+              ref: 'main'
+            });
+            console.log('✅ 已触发听书服务下一次重启工作流');
+          } catch (error) {
+            console.log('⚠️ 触发听书服务重启工作流失败: ' + error.message);
+          }
+
+    - name: Upload Ximalaya restart logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ximalaya-restart-logs-${{ github.run_id }}
+        path: |
+          ximalaya_service_restart.log
+          ximalaya_restart_info.txt
+          ximalaya_restart_log.txt
+        retention-days: 3
