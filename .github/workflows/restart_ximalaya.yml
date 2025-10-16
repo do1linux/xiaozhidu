@@ -1,4 +1,4 @@
-name: Auto Restart Ximalaya Service
+name: Restart Ximalaya
 
 on:
   workflow_dispatch: # 手动触发
@@ -46,7 +46,7 @@ jobs:
         echo "🌙 当前为静默时段（北京时间0-6点），跳过听书服务重启"
         exit 0
 
-    - name: Stop any existing Ximalaya service
+    - name: Stop any existing Ximalaya
       if: steps.time_check.outputs.should_run == 'true'
       run: |
         echo "🛑 停止可能存在的听书服务进程..."
@@ -55,7 +55,7 @@ jobs:
         sleep 2
         echo "✅ 听书服务清理完成"
 
-    - name: Start new Ximalaya service instance
+    - name: Start new Ximalaya instance
       if: steps.time_check.outputs.should_run == 'true'
       run: |
         echo "🚀 启动新的听书服务实例..."
@@ -68,7 +68,7 @@ jobs:
         echo "✅ 新听书服务实例已启动，PID: $(cat ximalaya_service_restart.pid)"
         echo "📡 重新连接小智AI听书服务..."
 
-    - name: Wait and monitor Ximalaya service
+    - name: Wait and monitor Ximalaya
       if: steps.time_check.outputs.should_run == 'true'
       run: |
         echo "⏰ 听书服务将运行5小时50分钟..."
