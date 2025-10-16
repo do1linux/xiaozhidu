@@ -1,0 +1,102 @@
+name: Music Service for Xiaozhi AI
+
+on:
+  workflow_dispatch: # 允许手动触发
+  schedule:
+    # 在北京时间6点启动，22点后停止（通过内部逻辑判断）
+    # UTC时间比北京时间晚8小时，所以对应UTC的22点
+    - cron: '0 22 * * *' 
+
+env:
+  MCP_ENDPOINT: ${{ secrets.MCP_ENDPOINT }}
+  MUSIC_API_KEY: ${{ secrets.MUSIC_API_KEY }}
+
+jobs:
+  run-music-service:
+    runs-on: ubuntu-latest
+    # 设置北京时区
+    defaults:
+      run:
+        shell: bash
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Check Beijing time
+      id: time_check
+      run: |
+        # 获取UTC时间并计算北京时间
+        current_hour=$(date -u +%H)
+        beijing_hour=$(( (current_hour + 8) % 24 ))
+        
+        echo "当前UTC时间: $(date -u)"
+        echo "当前北京时间: 约 $beijing_hour 点"
+        
+        # 检查是否在0-6点之间
+        if [ $beijing_hour -ge 0 ] && [ $beijing_hour -lt 6 ]; then
+          echo "当前为北京时间0-6点，停止服务运行"
+          echo "should_exit=true" >> $GITHUB_OUTPUT
+        else
+          echo "当前为北京时间6-24点，启动服务"
+          echo "should_exit=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Stop service if in quiet hours
+      if: steps.time_check.outputs.should_exit == 'true'
+      run: |
+        echo "跳过服务执行，当前为静默时段"
+        exit 0
+
+    - name: Start Music Service
+      if: steps.time_check.outputs.should_exit == 'false'
+      run: |
+        echo "启动Music服务..."
+        
+        # 使用nohup和后台运行，并记录PID
+        nohup python mcp_pipe.py music.py > service.log 2>&1 &
+        echo $! > service.pid
+        
+        # 记录启动时间
+        echo "服务启动时间: $(date)" > startup_time.txt
+        
+        echo "Music服务已启动，PID: $(cat service.pid)"
+
+    - name: Wait and restart
+      if: steps.time_check.outputs.should_exit == 'false'
+      run: |
+        echo "服务将运行5小时50分钟后自动重启..."
+        
+        # 等待5小时50分钟 (21000秒)
+        sleep 21000
+        
+        echo "到达重启时间，停止服务..."
+        
+        # 优雅停止服务
+        if [ -f service.pid ]; then
+          kill $(cat service.pid) 2>/dev/null || true
+          rm -f service.pid
+          echo "服务已停止"
+        fi
+        
+        # 记录重启时间
+        echo "计划重启时间: $(date)" >> restart_log.txt
+
+    - name: Upload service logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: service-logs
+        path: |
+          service.log
+          startup_time.txt
+          restart_log.txt
+        retention-days: 1
