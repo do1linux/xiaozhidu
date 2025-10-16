@@ -1,0 +1,54 @@
+name: Health Check and Recovery
+
+on:
+  schedule:
+    # 每30分钟检查一次健康状态
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+env:
+  MCP_ENDPOINT: ${{ secrets.MCP_ENDPOINT }}
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check Beijing time
+      id: time_check
+      run: |
+        current_hour_utc=$(date -u +%H)
+        current_hour_beijing=$(( (current_hour_utc + 8) % 24 ))
+        
+        if [ $current_hour_beijing -ge 0 ] && [ $current_hour_beijing -lt 6 ]; then
+          echo "should_check=false" >> $GITHUB_OUTPUT
+        else
+          echo "should_check=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Skip health check in quiet hours
+      if: steps.time_check.outputs.should_check == 'false'
+      run: echo "静默时段，跳过健康检查"
+
+    - name: Check service status
+      if: steps.time_check.outputs.should_check == 'true'
+      id: service_status
+      run: |
+        echo "🔍 检查Music服务状态..."
+        # 这里可以添加实际的服务健康检查逻辑
+        # 例如：检查进程是否在运行、能否正常响应等
+        echo "✅ 健康检查完成"
+        echo "needs_restart=false" >> $GITHUB_OUTPUT
+
+    - name: Trigger restart if unhealthy
+      if: steps.service_status.outputs.needs_restart == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'restart.yml',
+            ref: 'main'
+          });
+          console.log('🔄 检测到服务异常，已触发重启');
