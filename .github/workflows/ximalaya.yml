@@ -1,4 +1,4 @@
-name: Ximalaya Service for Xiaozhi AI
+name: Ximalaya  for Xiaozhi AI
 
 on:
   workflow_dispatch: # 允许手动触发
