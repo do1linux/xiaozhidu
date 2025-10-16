@@ -59,7 +59,7 @@ jobs:
         MCP_ENDPOINT: ${{ secrets.MCP_ENDPOINT }}
       run: |
         echo "启动独立听书服务..."
-        python mcp_pipe.py ximalaya_server.py
+        python mcp_pipe.py ximalaya.py
 
     - name: Upload service logs (if any)
       if: always()
