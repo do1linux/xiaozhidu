@@ -2,12 +2,14 @@ from mcp.server.fastmcp import FastMCP
 import requests
 import os
 import logging
+import threading
 
 # 初始化MCP
 mcp = FastMCP("MusicService")
 logger = logging.getLogger(__name__)
+_LOCK = threading.Lock()
 
-_API_URL = 'https://api.yaohud.cn/api/music/wy'
+_API_BASE_URL = 'https://api.yaohud.cn/api/music/wy'
 
 @mcp.tool()
 def get_music_url(song_name: str) -> dict:
@@ -35,13 +37,17 @@ def get_music_url(song_name: str) -> dict:
     try:
         # 调用音乐API获取歌曲信息
         logger.info(f"搜索歌曲: {song_name}")
-        params = {
-            'key': api_key, 
+        
+        # 构建带API密钥的URL
+        url = f"{_API_BASE_URL}?key={api_key}"
+        
+        # 请求数据
+        data = {
             'msg': song_name.strip(), 
             'n': '1'  # 只获取第一首
         }
         
-        resp = requests.post(_API_URL, params=params, timeout=10)
+        resp = requests.post(url, data=data, timeout=10)
         resp.raise_for_status()
         
         data = resp.json()
@@ -51,7 +57,8 @@ def get_music_url(song_name: str) -> dict:
             return {
                 "success": False,
                 "error": "未找到该歌曲",
-                "search_term": song_name
+                "search_term": song_name,
+                "api_response": data  # 包含原始API响应用于调试
             }
         
         # 返回歌曲信息和播放URL
@@ -106,17 +113,20 @@ def search_music(song_name: str, limit: int = 5) -> dict:
         return {"success": False, "error": "API密钥未配置"}
     
     try:
-        params = {
-            'key': api_key, 
+        # 构建带API密钥的URL
+        url = f"{_API_BASE_URL}?key={api_key}"
+        
+        # 请求数据
+        data = {
             'msg': song_name.strip(), 
             'n': str(limit)
         }
         
-        resp = requests.post(_API_URL, params=params, timeout=10)
+        resp = requests.post(url, data=data, timeout=10)
         resp.raise_for_status()
         
-        data = resp.json()
-        songs = data.get('data', [])
+        api_response = resp.json()
+        songs = api_response.get('data', [])
         
         if not songs:
             return {
