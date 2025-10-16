@@ -1,18 +1,18 @@
-name: Restart Music Service
+name: Auto Restart Music Service
 
 on:
-  workflow_dispatch: # 仅手动触发
-  schedule:
-    # 每6小时检查一次（备用方案）
-    - cron: '0 */6 * * *'
+  workflow_dispatch: # 手动触发
+  repository_dispatch: # 支持API触发
+    types: [restart-service]
 
 env:
   MCP_ENDPOINT: ${{ secrets.MCP_ENDPOINT }}
   MUSIC_API_KEY: ${{ secrets.MUSIC_API_KEY }}
 
 jobs:
-  restart-service:
+  auto-restart:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     
     steps:
     - name: Checkout code
@@ -26,24 +26,64 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
 
-    - name: Stop existing service
+    - name: Check Beijing time
+      id: time_check
       run: |
-        echo "停止现有Music服务..."
-        # 查找并停止可能存在的music服务进程
-        pkill -f "mcp_pipe.py music.py" || true
-        echo "现有服务已停止"
+        current_hour_utc=$(date -u +%H)
+        current_hour_beijing=$(( (current_hour_utc + 8) % 24 ))
+        
+        echo "当前UTC时间: $(date -u)"
+        echo "当前北京时间: 约 $current_hour_beijing 点"
+        
+        if [ $current_hour_beijing -ge 0 ] && [ $current_hour_beijing -lt 6 ]; then
+          echo "should_run=false" >> $GITHUB_OUTPUT
+        else
+          echo "should_run=true" >> $GITHUB_OUTPUT
+        fi
 
-    - name: Start new Music Service instance
+    - name: Skip restart in quiet hours
+      if: steps.time_check.outputs.should_run == 'false'
       run: |
-        echo "启动新的Music服务实例..."
+        echo "🌙 当前为静默时段（北京时间0-6点），跳过自动重启"
+        exit 0
+
+    - name: Stop any existing service
+      if: steps.time_check.outputs.should_run == 'true'
+      run: |
+        echo "🛑 停止可能存在的旧服务进程..."
+        # 查找并停止music服务相关进程
+        pkill -f "mcp_pipe.py music.py" || true
+        sleep 2
+        echo "✅ 清理完成"
+
+    - name: Start new service instance
+      if: steps.time_check.outputs.should_run == 'true'
+      run: |
+        echo "🚀 启动新的Music服务实例..."
+        echo "重启时间: $(date)" > restart_info.txt
+        
+        # 启动新实例
         nohup python mcp_pipe.py music.py > service_restart.log 2>&1 &
         echo $! > service_restart.pid
-        echo "新服务实例已启动，PID: $(cat service_restart.pid)"
         
+        echo "✅ 新服务实例已启动，PID: $(cat service_restart.pid)"
+        echo "📡 重新连接小智AI..."
+
+    - name: Wait before next cycle
+      if: steps.time_check.outputs.should_run == 'true'
+      run: |
+        echo "⏰ 服务将运行5小时50分钟..."
+        sleep 21000  # 5小时50分钟
+        
+        echo "🔄 准备下一次重启..."
+        # 这里可以添加触发下一次重启的逻辑
+
     - name: Upload restart logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: restart-logs
-        path: service_restart.log
-        retention-days: 1
+        name: restart-logs-${{ github.run_id }}
+        path: |
+          service_restart.log
+          restart_info.txt
+        retention-days: 3
