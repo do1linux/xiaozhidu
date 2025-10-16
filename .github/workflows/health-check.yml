@@ -1,4 +1,4 @@
-name: Health Check and Recovery
+name: Health Check and Recovery for Both Services
 
 on:
   schedule:
@@ -8,6 +8,7 @@ on:
 
 env:
   MCP_ENDPOINT: ${{ secrets.MCP_ENDPOINT }}
+  MUSIC_API_KEY: ${{ secrets.MUSIC_API_KEY }}
 
 jobs:
   health-check:
@@ -28,27 +29,90 @@ jobs:
 
     - name: Skip health check in quiet hours
       if: steps.time_check.outputs.should_check == 'false'
-      run: echo "静默时段，跳过健康检查"
+      run: echo "🌙 静默时段（北京时间0-6点），跳过健康检查"
 
-    - name: Check service status
+    - name: Checkout code and setup environment
       if: steps.time_check.outputs.should_check == 'true'
-      id: service_status
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      if: steps.time_check.outputs.should_check == 'true'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      if: steps.time_check.outputs.should_check == 'true'
+      run: pip install -r requirements.txt
+
+    - name: Check Music Service status
+      if: steps.time_check.outputs.should_check == 'true'
+      id: music_status
       run: |
         echo "🔍 检查Music服务状态..."
-        # 这里可以添加实际的服务健康检查逻辑
-        # 例如：检查进程是否在运行、能否正常响应等
-        echo "✅ 健康检查完成"
-        echo "needs_restart=false" >> $GITHUB_OUTPUT
+        
+        # 检查音乐服务进程是否在运行
+        if pgrep -f "mcp_pipe.py music.py" > /dev/null; then
+          echo "✅ Music服务进程正在运行"
+          echo "music_needs_restart=false" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Music服务进程未运行"
+          echo "music_needs_restart=true" >> $GITHUB_OUTPUT
+        fi
 
-    - name: Trigger restart if unhealthy
-      if: steps.service_status.outputs.needs_restart == 'true'
+    - name: Check Ximalaya Service status
+      if: steps.time_check.outputs.should_check == 'true'
+      id: ximalaya_status
+      run: |
+        echo "🔍 检查Ximalaya听书服务状态..."
+        
+        # 检查听书服务进程是否在运行
+        if pgrep -f "mcp_pipe.py ximalaya.py" > /dev/null; then
+          echo "✅ Ximalaya服务进程正在运行"
+          echo "ximalaya_needs_restart=false" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Ximalaya服务进程未运行"
+          echo "ximalaya_needs_restart=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Trigger Music service restart if unhealthy
+      if: steps.music_status.outputs.music_needs_restart == 'true'
       uses: actions/github-script@v6
       with:
         script: |
-          await github.rest.actions.createWorkflowDispatch({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            workflow_id: 'restart.yml',
-            ref: 'main'
-          });
-          console.log('🔄 检测到服务异常，已触发重启');
+          try {
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'restart.yml',
+              ref: 'main'
+            });
+            console.log('🔄 检测到Music服务异常，已触发重启');
+          } catch (error) {
+            console.log('⚠️ 触发Music服务重启工作流失败: ' + error.message);
+          }
+
+    - name: Trigger Ximalaya service restart if unhealthy
+      if: steps.ximalaya_status.outputs.ximalaya_needs_restart == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          try {
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'restart_ximalaya.yml',
+              ref: 'main'
+            });
+            console.log('🔄 检测到Ximalaya服务异常，已触发重启');
+          } catch (error) {
+            console.log('⚠️ 触发Ximalaya服务重启工作流失败: ' + error.message);
+          }
+
+    - name: Log health status
+      if: steps.time_check.outputs.should_check == 'true'
+      run: |
+        echo "📊 健康检查汇总:"
+        echo "Music服务状态: ${{ steps.music_status.outputs.music_needs_restart == 'true' && '异常' || '正常' }}"
+        echo "Ximalaya服务状态: ${{ steps.ximalaya_status.outputs.ximalaya_needs_restart == 'true' && '异常' || '正常' }}"
+        echo "检查时间: $(date)"
