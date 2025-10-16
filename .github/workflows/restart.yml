@@ -1,0 +1,49 @@
+name: Restart Music Service
+
+on:
+  workflow_dispatch: # 仅手动触发
+  schedule:
+    # 每6小时检查一次（备用方案）
+    - cron: '0 */6 * * *'
+
+env:
+  MCP_ENDPOINT: ${{ secrets.MCP_ENDPOINT }}
+  MUSIC_API_KEY: ${{ secrets.MUSIC_API_KEY }}
+
+jobs:
+  restart-service:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Stop existing service
+      run: |
+        echo "停止现有Music服务..."
+        # 查找并停止可能存在的music服务进程
+        pkill -f "mcp_pipe.py music.py" || true
+        echo "现有服务已停止"
+
+    - name: Start new Music Service instance
+      run: |
+        echo "启动新的Music服务实例..."
+        nohup python mcp_pipe.py music.py > service_restart.log 2>&1 &
+        echo $! > service_restart.pid
+        echo "新服务实例已启动，PID: $(cat service_restart.pid)"
+        
+    - name: Upload restart logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: restart-logs
+        path: service_restart.log
+        retention-days: 1
