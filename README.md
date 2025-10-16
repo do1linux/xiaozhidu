@@ -1,38 +1,10 @@
-# 小智AI音乐播放器服务
+# MCP Tools for Xiaozhi AI
 
-这个项目让你在小智AI智能体中使用音乐播放功能，服务运行在GitHub Actions上。
+为小智AI提供MCP工具服务的项目，包含计算器和音乐服务。
 
 ## 快速开始
 
-### 1. 配置 Secrets
-在GitHub仓库设置中配置：
-- `MCP_WSS_TOKEN`: 你的小智AI MCP接入点Token
-- `MUSIC_API_KEY`: 音乐API密钥（从音乐API服务获取）
-
-### 2. 启动服务
-1. 进入GitHub Actions页面
-2. 选择 "Xiaozhi AI Music Service" 工作流  
-3. 点击 "Run workflow"
-
-### 3. 在小智AI中使用
-服务启动后，你可以对小智AI说：
-- "播放周杰伦的青花瓷"
-- "搜索林俊杰的歌曲"
-- "推荐一些热门歌曲"
-- "音乐服务状态"
-
-## 功能特点
-
-- 🎵 智能音乐搜索和播放
-- 🔍 歌曲信息查询
-- 📱 专为小智AI优化
-- ⏰ 自动定时重启
-- 📊 完整的运行日志
-
-## 服务运行时间
-
-- 每次手动触发运行约4小时
-- 每4小时自动重启一次
-- 提供持续的音乐服务
-
-现在就在小智AI中享受音乐吧！🎶
+1. 克隆项目
+```bash
+git clone <your-repo-url>
+cd mcp-tools
