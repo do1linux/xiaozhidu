@@ -1,11 +1,16 @@
 name: Music Service for Xiaozhi AI
 
 on:
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch: # 手动触发
+  push: # 代码推送时触发
+    branches: [ main ]
   schedule:
-    # 在北京时间6点启动，22点后停止（通过内部逻辑判断）
-    # UTC时间比北京时间晚8小时，所以对应UTC的22点
-    - cron: '0 22 * * *' 
+    # 在北京时间6点启动（UTC 22点）
+    - cron: '0 22 * * *'
+    # 在北京时间12点启动（UTC 4点）  
+    - cron: '0 4 * * *'
+    # 在北京时间18点启动（UTC 10点）
+    - cron: '0 10 * * *'
 
 env:
   MCP_ENDPOINT: ${{ secrets.MCP_ENDPOINT }}
@@ -14,11 +19,8 @@ env:
 jobs:
   run-music-service:
     runs-on: ubuntu-latest
-    # 设置北京时区
-    defaults:
-      run:
-        shell: bash
-        
+    timeout-minutes: 360 # 设置6小时超时，确保不会超限
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -31,72 +33,95 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
 
-    - name: Check Beijing time
-      id: time_check
+    - name: Check Beijing time and set runtime
+      id: time_config
       run: |
         # 获取UTC时间并计算北京时间
-        current_hour=$(date -u +%H)
-        beijing_hour=$(( (current_hour + 8) % 24 ))
+        current_hour_utc=$(date -u +%H)
+        current_hour_beijing=$(( (current_hour_utc + 8) % 24 ))
         
         echo "当前UTC时间: $(date -u)"
-        echo "当前北京时间: 约 $beijing_hour 点"
+        echo "当前北京时间: 约 $current_hour_beijing 点"
         
         # 检查是否在0-6点之间
-        if [ $beijing_hour -ge 0 ] && [ $beijing_hour -lt 6 ]; then
-          echo "当前为北京时间0-6点，停止服务运行"
-          echo "should_exit=true" >> $GITHUB_OUTPUT
+        if [ $current_hour_beijing -ge 0 ] && [ $current_hour_beijing -lt 6 ]; then
+          echo "当前为北京时间0-6点，跳过执行"
+          echo "should_run=false" >> $GITHUB_OUTPUT
+          echo "wait_seconds=0" >> $GITHUB_OUTPUT
         else
           echo "当前为北京时间6-24点，启动服务"
-          echo "should_exit=false" >> $GITHUB_OUTPUT
+          echo "should_run=true" >> $GITHUB_OUTPUT
+          
+          # 计算运行时间（5小时50分钟 = 21000秒）
+          echo "wait_seconds=21000" >> $GITHUB_OUTPUT
         fi
 
-    - name: Stop service if in quiet hours
-      if: steps.time_check.outputs.should_exit == 'true'
+    - name: Skip if in quiet hours
+      if: steps.time_config.outputs.should_run == 'false'
       run: |
-        echo "跳过服务执行，当前为静默时段"
+        echo "跳过服务执行，当前为静默时段（北京时间0-6点）"
         exit 0
 
     - name: Start Music Service
-      if: steps.time_check.outputs.should_exit == 'false'
+      if: steps.time_config.outputs.should_run == 'true'
       run: |
-        echo "启动Music服务..."
+        echo "启动Music服务连接小智AI..."
+        echo "启动时间: $(date)" > service_info.txt
+        echo "预计运行: 5小时50分钟" >> service_info.txt
         
-        # 使用nohup和后台运行，并记录PID
+        # 启动服务（后台运行）
         nohup python mcp_pipe.py music.py > service.log 2>&1 &
         echo $! > service.pid
         
-        # 记录启动时间
-        echo "服务启动时间: $(date)" > startup_time.txt
-        
-        echo "Music服务已启动，PID: $(cat service.pid)"
+        echo "✅ Music服务已启动，PID: $(cat service.pid)"
+        echo "📡 正在连接小智AI MCP端点..."
 
-    - name: Wait and restart
-      if: steps.time_check.outputs.should_exit == 'false'
+    - name: Monitor and auto-restart
+      if: steps.time_config.outputs.should_run == 'true'
       run: |
-        echo "服务将运行5小时50分钟后自动重启..."
+        WAIT_SECONDS=${{ steps.time_config.outputs.wait_seconds }}
+        echo "⏰ 服务将运行 $WAIT_SECONDS 秒后自动重启..."
         
-        # 等待5小时50分钟 (21000秒)
-        sleep 21000
+        # 等待指定时间
+        sleep $WAIT_SECONDS
         
-        echo "到达重启时间，停止服务..."
+        echo "🔄 到达自动重启时间，停止当前服务..."
         
-        # 优雅停止服务
+        # 停止服务
         if [ -f service.pid ]; then
+          echo "停止进程: $(cat service.pid)"
           kill $(cat service.pid) 2>/dev/null || true
           rm -f service.pid
-          echo "服务已停止"
+          echo "✅ 服务已停止"
         fi
         
-        # 记录重启时间
-        echo "计划重启时间: $(date)" >> restart_log.txt
+        echo "重启时间: $(date)" >> restart_log.txt
+        echo "🔁 准备重新启动..."
 
-    - name: Upload service logs
+    - name: Trigger restart workflow
+      if: steps.time_config.outputs.should_run == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          try {
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'restart.yml',
+              ref: 'main'
+            });
+            console.log('✅ 已触发重启工作流');
+          } catch (error) {
+            console.log('⚠️ 触发重启工作流失败，可能是第一次运行');
+          }
+
+    - name: Upload logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: service-logs
+        name: service-logs-${{ github.run_id }}
         path: |
           service.log
-          startup_time.txt
+          service_info.txt
           restart_log.txt
-        retention-days: 1
+        retention-days: 3
