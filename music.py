@@ -7,20 +7,20 @@ import urllib.parse
 import base64
 
 # 初始化MCP
-mcp = FastMCP("HardwareMusicService")
+mcp = FastMCP("MusicService")
 logger = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 
-_API_BASE_URL = 'https://api.yaohud.cn/api/music/wy'
+_API_BASE_URL = 'https://api.yaohud.cn/api/music/migu'
 
 @mcp.tool()
-def play_music_direct(song_name: str) -> dict:
+def play_song(song_name: str) -> dict:
     """
-    直接硬件播放音乐 - 绕过固件限制
+    播放歌曲 - 使用咪咕音乐API
     Args:
         song_name: 歌曲名称
     Returns:
-        dict: 包含音频数据和硬件控制指令
+        dict: 包含音频URL和歌曲信息
     """
     api_key = os.environ.get('MUSIC_API_KEY')
     if not api_key:
@@ -36,10 +36,13 @@ def play_music_direct(song_name: str) -> dict:
         }
     
     try:
-        # 获取音乐信息
+        # 调用咪咕音乐API获取歌曲信息
         logger.info(f"搜索歌曲: {song_name}")
         
+        # URL编码歌曲名称
         encoded_song_name = urllib.parse.quote(song_name.strip())
+        
+        # 构建完整URL
         url = f"{_API_BASE_URL}?key={api_key}&msg={encoded_song_name}&n=1"
         
         headers = {
@@ -52,6 +55,7 @@ def play_music_direct(song_name: str) -> dict:
         
         data = resp.json()
         
+        # 检查API返回状态
         if data.get('code') != 200:
             return {
                 "success": False,
@@ -59,74 +63,173 @@ def play_music_direct(song_name: str) -> dict:
             }
         
         music_data = data.get('data', {})
-        music_url = music_data.get('musicurl')
         
-        if not music_url:
+        # 检查是否有音乐URL
+        if not music_data.get('music_url'):
             return {
                 "success": False,
-                "error": "未找到可播放的歌曲"
+                "error": "未找到可播放的歌曲",
+                "search_term": song_name
             }
         
-        # 下载音频数据
-        logger.info(f"下载音频数据: {music_url}")
-        audio_response = requests.get(music_url, timeout=30)
-        audio_response.raise_for_status()
-        
-        # 将音频数据编码为base64，便于传输
-        audio_base64 = base64.b64encode(audio_response.content).decode('utf-8')
-        
-        # 返回硬件控制指令
+        # 返回歌曲信息和播放URL
         result = {
             "success": True,
-            "action": "hardware_audio_play",
-            "hardware_control": {
-                "type": "direct_audio",
-                "audio_data": audio_base64,
-                "data_format": "base64_mp3",
-                "sample_rate": 44100,
-                "channels": 2,
-                "bit_depth": 16
-            },
+            "action": "play_music",
+            "song_name": song_name,
+            "play_url": music_data['music_url'],
             "song_info": {
-                "title": music_data.get('name', '未知'),
-                "artist": music_data.get('songname', '未知'),
-                "album": music_data.get('album', '未知')
+                "title": music_data.get('title', '未知'),
+                "artist": music_data.get('singer', '未知'),
+                "cover": music_data.get('cover', ''),
+                "lrc_url": music_data.get('lrc_url', ''),
+                "detail_link": music_data.get('detail_link', '')
             },
-            "instruction": "ESP32-S3请直接解码并播放此音频数据",
-            "user_message": f"正在通过硬件直接播放: {music_data.get('name', '未知')}"
+            "audio_info": {
+                "format": "mp3",
+                "source": "migu",
+                "quality": "high"
+            },
+            "instruction": "小智AI可以使用此URL直接播放音频",
+            "user_message": f"正在播放: {music_data.get('title', '未知')} - {music_data.get('singer', '未知')}"
         }
         
-        logger.info(f"成功获取音频数据: {result['song_info']['title']}")
+        logger.info(f"成功获取歌曲: {result['song_info']['title']} - {result['song_info']['artist']}")
         return result
         
-    except Exception as e:
-        logger.error(f"硬件播放失败: {str(e)}")
+    except requests.exceptions.Timeout:
         return {
             "success": False,
-            "error": f"处理请求时出错: {str(e)}"
+            "error": "API请求超时",
+            "search_term": song_name
+        }
+    except requests.exceptions.RequestException as e:
+        return {
+            "success": False,
+            "error": f"网络请求失败: {str(e)}",
+            "search_term": song_name
+        }
+    except Exception as e:
+        logger.error(f"播放歌曲失败: {str(e)}")
+        return {
+            "success": False,
+            "error": f"处理请求时出错: {str(e)}",
+            "search_term": song_name
         }
 
 @mcp.tool()
-def play_music_url(song_name: str) -> dict:
+def search_songs(keyword: str, limit: int = 5) -> dict:
     """
-    返回音频URL供ESP32-S3直接下载播放
+    搜索多首歌曲
     Args:
-        song_name: 歌曲名称
+        keyword: 搜索关键词
+        limit: 返回结果数量，默认5首
     Returns:
-        dict: 包含音频URL和硬件指令
+        dict: 包含多首歌曲信息
     """
     api_key = os.environ.get('MUSIC_API_KEY')
     if not api_key:
-        return {
-            "success": False,
-            "error": "API密钥未配置"
-        }
+        return {"success": False, "error": "API密钥未配置"}
     
     try:
-        # 获取音乐URL
-        logger.info(f"搜索歌曲URL: {song_name}")
+        # URL编码关键词
+        encoded_keyword = urllib.parse.quote(keyword.strip())
         
+        # 构建完整URL
+        url = f"{_API_BASE_URL}?key={api_key}&msg={encoded_keyword}&n={limit}"
+        
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0'
+        }
+        
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        
+        data = resp.json()
+        
+        # 检查API返回状态
+        if data.get('code') != 200:
+            return {
+                "success": False,
+                "error": f"API返回错误: {data.get('msg', '未知错误')}",
+                "search_term": keyword
+            }
+        
+        # 处理API响应数据
+        music_data = data.get('data', {})
+        
+        # 由于咪咕API单曲搜索返回的是单个歌曲对象，不是列表
+        # 这里我们假设搜索多首时API会返回列表，如果没有则返回单首
+        if isinstance(music_data, dict) and music_data.get('title'):
+            # 单首歌曲结果
+            songs = [{
+                "title": music_data.get('title', '未知'),
+                "artist": music_data.get('singer', '未知'),
+                "cover": music_data.get('cover', ''),
+                "play_url": music_data.get('music_url', ''),
+                "has_audio": bool(music_data.get('music_url'))
+            }]
+        else:
+            # 多首歌曲结果（假设为列表）
+            songs = []
+            # 这里需要根据实际API返回格式调整
+        
+        if not songs:
+            return {
+                "success": True,
+                "action": "search_results",
+                "message": "未找到相关歌曲",
+                "search_term": keyword,
+                "songs": []
+            }
+        
+        return {
+            "success": True,
+            "action": "search_results",
+            "search_term": keyword,
+            "songs": songs,
+            "count": len(songs),
+            "instruction": f"找到 {len(songs)} 首相关歌曲，使用 play_song 工具播放"
+        }
+        
+    except Exception as e:
+        logger.error(f"搜索歌曲失败: {str(e)}")
+        return {
+            "success": False,
+            "error": f"搜索失败: {str(e)}",
+            "search_term": keyword
+        }
+
+@mcp.tool()
+def play_music(song_name: str) -> dict:
+    """
+    播放音乐 (play_song的别名，保持兼容性)
+    Args:
+        song_name: 歌曲名称
+    Returns:
+        dict: 包含音频URL和歌曲信息
+    """
+    return play_song(song_name)
+
+@mcp.tool()
+def get_song_info(song_name: str) -> dict:
+    """
+    获取歌曲详细信息（不播放）
+    Args:
+        song_name: 歌曲名称
+    Returns:
+        dict: 包含歌曲详细信息
+    """
+    api_key = os.environ.get('MUSIC_API_KEY')
+    if not api_key:
+        return {"success": False, "error": "API密钥未配置"}
+    
+    try:
+        # URL编码歌曲名称
         encoded_song_name = urllib.parse.quote(song_name.strip())
+        
+        # 构建完整URL
         url = f"{_API_BASE_URL}?key={api_key}&msg={encoded_song_name}&n=1"
         
         headers = {
@@ -139,102 +242,55 @@ def play_music_url(song_name: str) -> dict:
         
         data = resp.json()
         
+        # 检查API返回状态
         if data.get('code') != 200:
             return {
                 "success": False,
-                "error": f"API返回错误: {data.get('msg', '未知错误')}"
+                "error": f"API返回错误: {data.get('msg', '未知错误')}",
+                "search_term": song_name
             }
         
         music_data = data.get('data', {})
-        music_url = music_data.get('musicurl')
         
-        if not music_url:
-            return {
-                "success": False,
-                "error": "未找到可播放的歌曲"
-            }
-        
-        # 返回URL供ESP32-S3直接下载播放
-        result = {
+        return {
             "success": True,
-            "action": "hardware_download_play",
-            "audio_url": music_url,
-            "hardware_instruction": {
-                "method": "direct_download",
-                "target": "esp32_s3",
-                "protocol": "http"
+            "action": "song_info",
+            "search_term": song_name,
+            "song_details": {
+                "title": music_data.get('title', '未知'),
+                "artist": music_data.get('singer', '未知'),
+                "cover": music_data.get('cover', ''),
+                "lrc_url": music_data.get('lrc_url', ''),
+                "music_url": music_data.get('music_url', ''),
+                "detail_link": music_data.get('detail_link', ''),
+                "content_id": music_data.get('contentId', ''),
+                "copyright_id": music_data.get('copyrightId', '')
             },
-            "song_info": {
-                "title": music_data.get('name', '未知'),
-                "artist": music_data.get('songname', '未知'),
-                "album": music_data.get('album', '未知')
-            },
-            "user_message": f"ESP32-S3正在直接下载播放: {music_data.get('name', '未知')}"
+            "available": bool(music_data.get('music_url'))
         }
-        
-        return result
         
     except Exception as e:
-        logger.error(f"获取音乐URL失败: {str(e)}")
+        logger.error(f"获取歌曲信息失败: {str(e)}")
         return {
             "success": False,
-            "error": f"处理请求时出错: {str(e)}"
+            "error": f"获取信息失败: {str(e)}",
+            "search_term": song_name
         }
 
 @mcp.tool()
-def control_audio_hardware(command: str, value: int = None) -> dict:
+def get_service_status() -> dict:
     """
-    直接控制ESP32-S3音频硬件
-    Args:
-        command: 控制命令 (play, pause, stop, volume, mute)
-        value: 数值 (音量0-100等)
+    获取音乐服务状态
     Returns:
-        dict: 控制结果
-    """
-    commands = {
-        "play": "开始播放",
-        "pause": "暂停播放", 
-        "stop": "停止播放",
-        "volume": f"设置音量为{value}",
-        "mute": "静音"
-    }
-    
-    if command not in commands:
-        return {
-            "success": False,
-            "error": f"不支持的命令: {command}",
-            "supported_commands": list(commands.keys())
-        }
-    
-    return {
-        "success": True,
-        "action": "hardware_control",
-        "command": command,
-        "value": value,
-        "instruction": f"ESP32-S3执行音频控制: {commands[command]}",
-        "user_message": f"已发送硬件控制指令: {commands[command]}"
-    }
-
-@mcp.tool()
-def get_hardware_status() -> dict:
-    """
-    获取ESP32-S3硬件状态
-    Returns:
-        dict: 硬件状态信息
+        dict: 服务状态信息
     """
     return {
         "success": True,
-        "hardware": "ESP32-S3",
-        "audio_capabilities": {
-            "i2s": True,
-            "pwm_audio": True,
-            "mp3_decoding": True,
-            "wav_playback": True,
-            "sample_rate_max": 48000,
-            "channels": 2
-        },
-        "status": "ready",
-        "instruction": "硬件就绪，可接收音频播放指令"
+        "service": "MusicService",
+        "version": "2.0",
+        "api_source": "咪咕音乐",
+        "supported_actions": ["play_song", "search_songs", "play_music", "get_song_info"],
+        "status": "running"
     }
 
 if __name__ == "__main__":
