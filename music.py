@@ -1,54 +1,68 @@
 from mcp.server.fastmcp import FastMCP
 import requests
-from playsound import playsound
-import tempfile
 import os
 import logging
-import threading
 
 # 初始化MCP和日志
-mcp = FastMCP("MusicPlayer")
+mcp = FastMCP("MusicService")
 logger = logging.getLogger(__name__)
-_LOCK = threading.Lock()  # 保留原线程锁
 
-_API_URL = 'https://api.yaohud.cn/api/music/wy' 
+_API_URL = 'https://api.yaohud.cn/api/music/wy'
 _API_KEY = os.environ.get('MUSIC_API_KEY')
 
-@mcp.tool()
-def play_music(song_name: str) -> str:
-    """
-    通过MCP接口播放音乐（线程安全）
-    Args:
-        song_name: 歌曲名，默认为"好运来"
-    Returns:
-        str: 播放结果或错误信息
-    """
+def get_music_url(song_name: str) -> dict:
+    """获取音乐URL的基础函数"""
     if not song_name.strip():
-        return "错误：歌曲名不能为空"
+        return {"success": False, "error": "歌曲名不能为空"}
 
-    with _LOCK:
-        try:
-            # 1. 调用API获取音乐URL
-            logger.info(f"搜索歌曲: {song_name}")
-            params = {'key': _API_KEY, 'msg': song_name.strip(), 'n': '1'}
-            resp = requests.post(_API_URL, params=params, timeout=10)
-            resp.raise_for_status()
-            music_url = resp.json()['data']['musicurl']
+    try:
+        logger.info(f"搜索歌曲: {song_name}")
+        params = {'key': _API_KEY, 'msg': song_name.strip(), 'n': '1'}
+        resp = requests.post(_API_URL, params=params, timeout=10)
+        resp.raise_for_status()
+        
+        data = resp.json()
+        music_url = data['data']['musicurl']
+        
+        return {
+            "success": True,
+            "audio_url": music_url,
+            "song_name": song_name
+        }
+        
+    except Exception as e:
+        logger.error(f"搜索失败: {str(e)}")
+        return {"success": False, "error": f"搜索失败: {str(e)}"}
 
-            # 2. 下载并保存临时文件
-            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as f:
-                f.write(requests.get(music_url, timeout=10).content)
-                temp_path = f.name
-
-            # 3. 播放并返回结果
-            playsound(temp_path)
-            os.unlink(temp_path)  # 立即清理
-            return f"播放成功: {song_name}"
-
-        except Exception as e:
-            logger.error(f"播放失败: {str(e)}")
-            return f"播放失败: {str(e)}"
+@mcp.tool()
+def play_music(song_name: str) -> dict:
+    """
+    提供音乐播放解决方案
+    
+    Args:
+        song_name: 歌曲名，如"周杰伦 青花瓷"
+        
+    Returns:
+        dict: 包含多种播放选项
+    """
+    music_data = get_music_url(song_name)
+    if not music_data["success"]:
+        return music_data
+    
+    audio_url = music_data["audio_url"]
+    
+    return {
+        "success": True,
+        "song_name": song_name,
+        "audio_url": audio_url,
+        "playback_methods": [
+            "1. 直接访问音频链接",
+            "2. 复制URL到其他播放器", 
+            "3. 在支持的环境中使用HTML播放器"
+        ],
+        "quick_access": f"🎵 播放链接: {audio_url}",
+        "message": f"已为您找到《{song_name}》，请选择合适的播放方式"
+    }
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")  # MCP标准输入输出模式
-
+    mcp.run(transport="stdio")
