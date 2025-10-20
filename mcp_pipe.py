@@ -34,7 +34,7 @@ INITIAL_BACKOFF = 1  # Initial wait time in seconds
 MAX_BACKOFF = 60  # Maximum wait time in seconds
 reconnect_attempt = 0
 backoff = INITIAL_BACKOFF
-
+1
 async def connect_with_retry(uri):
     """Connect to WebSocket server with retry mechanism"""
     global reconnect_attempt, backoff
