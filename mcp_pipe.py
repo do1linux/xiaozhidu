@@ -34,6 +34,7 @@ INITIAL_BACKOFF = 1  # Initial wait time in seconds
 MAX_BACKOFF = 60  # Maximum wait time in seconds
 reconnect_attempt = 0
 backoff = INITIAL_BACKOFF
+
 1
 async def connect_with_retry(uri):
     """Connect to WebSocket server with retry mechanism"""
@@ -44,10 +45,10 @@ async def connect_with_retry(uri):
                 wait_time = backoff * (1 + random.random() * 0.1)  # Add some random jitter
                 logger.info(f"Waiting {wait_time:.2f} seconds before reconnection attempt {reconnect_attempt}...")
                 await asyncio.sleep(wait_time)
-                
+
             # Attempt to connect
             await connect_to_server(uri)
-        
+
         except Exception as e:
             reconnect_attempt += 1
             logger.warning(f"Connection closed (attempt: {reconnect_attempt}): {e}")            
@@ -61,11 +62,11 @@ async def connect_to_server(uri):
         logger.info(f"Connecting to WebSocket server...")
         async with websockets.connect(uri) as websocket:
             logger.info(f"Successfully connected to WebSocket server")
-            
+
             # Reset reconnection counter if connection closes normally
             reconnect_attempt = 0
             backoff = INITIAL_BACKOFF
-            
+
             # Start mcp_script process
             process = subprocess.Popen(
                 ['python', mcp_script],
@@ -75,7 +76,7 @@ async def connect_to_server(uri):
                 text=True  # Use text mode
             )
             logger.info(f"Started {mcp_script} process")
-            
+
             # Create two tasks: read from WebSocket and write to process, read from process and write to WebSocket
             await asyncio.gather(
                 pipe_websocket_to_process(websocket, process),
@@ -106,7 +107,7 @@ async def pipe_websocket_to_process(websocket, process):
             # Read message from WebSocket
             message = await websocket.recv()
             logger.debug(f"<< {message[:120]}...")
-            
+
             # Write to process stdin (in text mode)
             if isinstance(message, bytes):
                 message = message.decode('utf-8')
@@ -128,11 +129,11 @@ async def pipe_process_to_websocket(process, websocket):
             data = await asyncio.get_event_loop().run_in_executor(
                 None, process.stdout.readline
             )
-            
+
             if not data:  # If no data, the process may have ended
                 logger.info("Process has ended output")
                 break
-                
+
             # Send data to WebSocket
             logger.debug(f">> {data[:120]}...")
             # In text mode, data is already a string, no need to decode
@@ -149,11 +150,11 @@ async def pipe_process_stderr_to_terminal(process):
             data = await asyncio.get_event_loop().run_in_executor(
                 None, process.stderr.readline
             )
-            
+
             if not data:  # If no data, the process may have ended
                 logger.info("Process has ended stderr output")
                 break
-                
+
             # Print stderr data to terminal (in text mode, data is already a string)
             sys.stderr.write(data)
             sys.stderr.flush()
@@ -169,20 +170,20 @@ def signal_handler(sig, frame):
 if __name__ == "__main__":
     # Register signal handler
     signal.signal(signal.SIGINT, signal_handler)
-    
+
     # mcp_script
     if len(sys.argv) < 2:
         logger.error("Usage: mcp_pipe.py <mcp_script>")
         sys.exit(1)
-    
+
     mcp_script = sys.argv[1]
-    
+
     # Get token from environment variable or command line arguments
     endpoint_url = os.environ.get('MCP_ENDPOINT')
     if not endpoint_url:
         logger.error("Please set the `MCP_ENDPOINT` environment variable")
         sys.exit(1)
-    
+
     # Start main loop
     try:
         asyncio.run(connect_with_retry(endpoint_url))
