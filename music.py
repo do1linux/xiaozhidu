@@ -13,6 +13,7 @@ _LOCK = threading.Lock()  # 保留原线程锁
 
 _API_URL = 'https://api.yaohud.cn/api/music/wy'  
 _API_KEY = os.environ.get('MUSIC_API_KEY')
+
 @mcp.tool()
 def play_music(song_name: str) -> str:
     """
