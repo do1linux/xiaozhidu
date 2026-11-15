@@ -53,7 +53,8 @@
 pip install -r requirements.txt
 ```
 
-顶层清单做了两处必要修正：
+Windows 上 `scripts\windows\install_services.bat` 已经把这份顶层清单一起装进 `.venv`，
+执行过初始化脚本就不需要再手动装。顶层清单做了两处必要修正：
 
 1. `mcp>=1.0.0,<2`。`mcp` 2.x 移除了 `mcp.server.fastmcp.FastMCP`（改名 `MCPServer`），无上界安装会拿到 2.x，导致本目录以及原有 `music.py` / `ximalaya.py` 全部 `ModuleNotFoundError`。
 2. `tzdata`（仅 Windows）。Windows 没有系统时区库，`zoneinfo` 取 `Asia/Shanghai` 需要这个包。

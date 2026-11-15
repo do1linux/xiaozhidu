@@ -30,7 +30,8 @@ if not exist "%PY%" (
 if not exist "%PY%" (echo [ERROR] Python 3.10+ not found & popd & exit /b 1)
 
 echo [2/4] Installing dependencies ...
-"%PY%" -m pip install --disable-pip-version-check -q -i https://pypi.tuna.tsinghua.edu.cn/simple -r "%REPO%\bridge\requirements.txt" -r "%REPO%\bot\requirements.txt"
+rem Top-level requirements.txt carries mcp / tzdata for mcp_servers\
+"%PY%" -m pip install --disable-pip-version-check -q -i https://pypi.tuna.tsinghua.edu.cn/simple -r "%REPO%\requirements.txt" -r "%REPO%\bridge\requirements.txt" -r "%REPO%\bot\requirements.txt"
 if errorlevel 1 (echo [ERROR] pip install failed & popd & exit /b 1)
 
 if not exist "%REPO%\.env" copy "%REPO%\.env.example" "%REPO%\.env" >nul

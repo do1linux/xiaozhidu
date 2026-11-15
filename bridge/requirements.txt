@@ -1,5 +1,6 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1
-pydantic==2.10.4
+# 与顶层 mcp 1.x 对齐（mcp 1.30 要求 pydantic>=2.11.0），避免合并安装时把 mcp 静默降级
+pydantic>=2.11.0,<3
 websockets==14.1

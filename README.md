@@ -215,7 +215,7 @@ tail -200 logs/bridge.jsonl | jq -r 'select(.reason | startswith("guard")) | .q_
    改 `.env` 的 `XIAOZHI_TEXT_FRAME` 即可适配。起不来时打开 `LOG_TEXT` 看 `meta.raw_head`。
 4. 只能 mi TTS；`edge/openai` 需要 tetos 链路，没接。
 5. 多轮上下文默认关（`HISTORY_TURNS=0`）；要接追问设成 2~3，代价是 token 和串味。
-6. MCP 的注册与工具描述在 xiaozhi 侧配，这里只送文本、捞答案。
+6. MCP 的注册与工具描述在 xiaozhi 服务端配，这里只送文本、捞答案。
 
 ---
 
@@ -255,7 +255,7 @@ cd D:\ai-mcp\xiaozhidu
 .\scripts\windows\install_services.bat
 ```
 
-脚本做四件事：建 `.venv` 并装两套依赖 → 从 example 复制 `.env` 与 `config/xiaogpt.yaml` → 用 nssm 注册 `VbBridge`（桥）与 `VbXiaoai`（小爱旁听，依赖前者）→ 打印后续步骤。**它不会替你填任何密钥。**
+脚本做四件事：建 `.venv` 并装三套依赖（`bridge/`、`bot/` 与顶层 `requirements.txt`，后者含 `mcp` 与 Windows 的 `tzdata`）→ 从 example 复制 `.env` 与 `config/xiaogpt.yaml` → 用 nssm 注册 `VbBridge`（桥）与 `VbXiaoai`（小爱旁听，依赖前者）→ 打印后续步骤。**它不会替你填任何密钥。** 免费 MCP 工具的启动与自检见 `mcp_servers/README.md`。
 
 ### 3. 填三处配置
 
@@ -296,7 +296,7 @@ python .\scripts\demo.py
 | `config/xiaogpt.toml` | `config/xiaogpt.yaml.example` |
 | `pull_update.bat` | `scripts/windows/pull_update.bat` |
 
-**MCP 不是丢目录自动加载**：xiaozhi 侧要配 MCP endpoint 与工具描述，`mcp_pipe.py` 是连 endpoint 的管道。原有脚本保持原路径不动，workflows 里的引用不会断。
+**MCP 不是丢目录自动加载**：xiaozhi 服务端要配 MCP endpoint 与工具描述，`mcp_pipe.py` 是连 endpoint 的管道。原有脚本保持原路径不动，workflows 里的引用不会断。
 
 ### 7. Windows 与 Linux 的差异
 
