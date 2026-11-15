@@ -14,3 +14,6 @@ logs/*
 # 小米登录态
 .mi.token
 *.token
+
+# 免费 MCP 服务运行时数据（记忆持久化文件，默认不生成）
+mcp_servers/data/

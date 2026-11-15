@@ -1,4 +1,8 @@
 python-dotenv>=1.0.0
 websockets>=12.0
-mcp>=1.0.0
+# 必须锁在 1.x：mcp 2.x 移除了 mcp.server.fastmcp.FastMCP，
+# 原 music.py / ximalaya.py 以及 mcp_servers/ 下的服务都会导入失败
+mcp>=1.0.0,<2
 requests>=2.31.0
+# Windows 无系统时区库，zoneinfo 需要 tzdata（mcp_servers/free_tools.py 的时区工具）
+tzdata>=2024.1; platform_system == "Windows"
