@@ -1,0 +1,16 @@
+# 运行时与本地文件
+.env
+.env.tmp
+config/xiaogpt.yaml
+logs/*.log
+logs/*.jsonl
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+logs/*
+!logs/.gitkeep
+
+# 小米登录态
+.mi.token
+*.token

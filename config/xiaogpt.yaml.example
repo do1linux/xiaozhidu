@@ -1,0 +1,26 @@
+# ===== 小爱账号（miservice 登录用，必填）=====
+hardware: LX06          # 音箱型号，底部标签可见；不确定就填 LX06
+account: "<小米账号>"    # 小米账号
+password: "<小米密码>"
+# 二选一：填 cookie 可跳过账号密码（见 README「登录排障」）
+cookie: ""
+mi_did: ""              # 留空自动探测；多台音箱时建议填 MIoT DID
+
+# ===== 播报方式 =====
+tts: mi                 # mi = 小爱自带 TTS；也可 edge/openai（音色更好但更慢）
+use_command: false      # 老设备 TTS 走 miIO 指令时才需要 true
+verbose: false
+
+# ===== 桥接参数（本文件由 bot/xiaoai_bot.py 读取）=====
+bot_options:
+  bridge_url: "http://127.0.0.1:8100/api/text_chat"
+  bridge_timeout: 45          # 单句总超时，含 LLM 推理 + MCP 调用
+  mute_before_tts: true       # 播报前先让小爱停止（它刚可能回了"没找到"）
+  pre_tts_delay: 0.6          # 留一点尾音时间，避免两路声音打架
+  tts_chunk: 80               # 单次 TTS 字数上限
+  min_query_len: 2            # 短于此长度的识别结果直接忽略（"嗯""啊"）
+  startup_ping: true
+  skip_queries:
+    - "开始持续对话"
+    - "结束持续对话"
+    - "小爱同学"

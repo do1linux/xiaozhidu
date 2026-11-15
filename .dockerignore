@@ -1,0 +1,8 @@
+.git
+.env
+.env.tmp
+logs
+config/xiaogpt.yaml
+**/__pycache__
+**/*.pyc
+.pytest_cache

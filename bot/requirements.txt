@@ -1,0 +1,4 @@
+miservice_fork==2.9.3
+aiohttp==3.11.11
+httpx==0.28.1
+PyYAML==6.0.2

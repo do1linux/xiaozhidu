@@ -1,0 +1,46 @@
+# 全部跑在同一台服务器上，走 127.0.0.1，不暴露任何入站端口。
+# network_mode: host 是为了让容器里的 127.0.0.1 就是宿主机的 127.0.0.1，
+# 省掉一堆 host.docker.internal 的坑（仅 Linux 支持）。
+services:
+  bridge:
+    build: ./bridge
+    image: voice-bridge/bridge:latest
+    container_name: voice-bridge
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      BRIDGE_ROOT: /app      # 容器内 prompts/ 与 logs/ 挂在 /app 下
+    volumes:
+      - ./prompts:/app/prompts:ro
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  xiaoai:
+    build: ./bot
+    image: voice-bridge/xiaoai:latest
+    container_name: voice-xiaoai
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      bridge:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      XIAOGPT_CONFIG: /app/config/xiaogpt.yaml
+    volumes:
+      - ./config:/app/config:ro
+      - xiaogpt_root:/root          # 小米登录 token 持久化，别每次重启都要验证码
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  xiaogpt_root:
