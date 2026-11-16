@@ -60,9 +60,14 @@ voice-bridge/
 │   ├── xiaozhi_system_prompt.txt  贴到 xiaozhi 的 system prompt
 │   └── native_keywords.txt        规则快筛白名单（正则）
 ├── config/xiaogpt.yaml.example    小爱账号 + 桥参数
-└── scripts/
-    ├── sync_gitee.sh          服务器唯一入口：常驻轮询 Gitee（自带定时，不用 cron）
-    └── demo.py                灌一批句子验证判定，不发声
+├── scripts/
+│   ├── sync_gitee.sh          服务器唯一入口：常驻轮询 Gitee（自带定时，不用 cron）
+│   ├── demo.py                灌一批句子验证判定，不发声
+│   └── windows/
+│       ├── install_services.bat   Windows 一次性初始化（venv + nssm 服务）
+│       ├── pull_update.bat        Windows 定时拉本仓库更新
+│       ├── sync_xiaozhi.bat       ★ xiaozhi 服务端上游同步（护住私有配置与模型）
+│       └── run_bridge.py          桥启动入口（nssm VbBridge 调用）
 ```
 
 ---
@@ -318,3 +323,73 @@ python .\scripts\demo.py
 | 换行 | `core.autocrlf input` | 默认 LF |
 
 `scripts/sync_gitee.sh` 仍保留，供有 Docker 的 Linux 服务器使用；Windows 不用它。
+
+---
+
+## 九、xiaozhi 服务端上游同步（源码部署）
+
+xiaozhi 服务端（`xinnan-tech/xiaozhi-esp32-server`）迭代很快。本节让本机那份源码
+**定期跟上官方上游**，同时避开官方升级文档里最大的坑：硬重置会冲掉你的
+`data/.config.yaml`（密钥、角色设定）和 `models/`（语音模型，几百 MB）。
+
+> 同步的是 xiaozhi 服务端自己的 git 仓库，**不是**本仓库。本仓库的更新仍走第八节
+> 的 `pull_update.bat`。两者互不干扰。
+
+### 1. 前置
+
+- xiaozhi 源码是 **git clone** 来的（有 `.git` 目录），默认路径 `D:\ai-mcp\xiaozhi-esp32-server`。
+  路径不同就设环境变量 `XIAOZHI_DIR` 覆盖，无需改脚本。
+- 服务端工作目录默认 `<XIAOZHI_DIR>\main\xiaozhi-server`（含 `app.py`、`data/`、`models/`），
+  不在这个结构就设 `SERVER_DIR` 覆盖。
+- 首次运行会自动添加名为 `upstream` 的 remote 指向官方仓库；若你已改成国内镜像，
+  脚本尊重现有配置，不会覆盖。
+
+### 2. 看状态（只读，不改动）
+
+```powershell
+.\scripts\windows\sync_xiaozhi.bat status
+```
+
+打印本地版本、上游版本、私有配置与模型是否存在。
+
+### 3. 同步一轮
+
+```powershell
+.\scripts\windows\sync_xiaozhi.bat sync
+```
+
+流程：`fetch upstream` → 比对 commit，无更新跳过 → 有更新则先备份
+`.config.yaml` → `reset --hard` 到上游 → 校验配置/模型，丢了就从备份恢复 →
+检测配置模板与依赖清单是否变化（只提示，不自动合并，因为涉及密钥）→ 可选重启服务。
+
+**保护机制**：`reset --hard` 只影响 git 跟踪的代码文件。你的 `.config.yaml` 和
+`model.pt` 本来就不在版本控制里，脚本再额外做备份 + 校验双保险。
+
+### 4. 让它自动跑
+
+```powershell
+.\scripts\windows\sync_xiaozhi.bat install     # 管理员运行：注册任务计划，默认每 120 分钟
+.\scripts\windows\sync_xiaozhi.bat uninstall   # 撤销
+```
+
+改间隔用环境变量：`set INTERVAL=60 && sync_xiaozhi.bat install`。
+要让同步后自动重启 xiaozhi 服务，设 `XIAOZHI_SERVICE` 为它的 nssm 服务名；
+不设则只同步代码、不重启（适合你手动管理服务的情况）。
+
+| 环境变量 | 默认 | 用途 |
+|---|---|---|
+| `XIAOZHI_DIR` | `D:\ai-mcp\xiaozhi-esp32-server` | xiaozhi git 仓库根 |
+| `SERVER_DIR` | `<XIAOZHI_DIR>\main\xiaozhi-server` | 服务端工作目录 |
+| `BRANCH` | `main` | 上游分支 |
+| `INTERVAL` | `120` | 任务计划间隔（分钟） |
+| `XIAOZHI_SERVICE` | 空 | nssm 服务名；设了才在更新后重启 |
+
+### 5. 升级后的两个提示
+
+日志在 `logs\xiaozhi_sync.log`，只记结论与短哈希。看到这两行要人工跟进：
+
+- `上游 config.yaml 模板已变` → 打开新版模板，把新增配置项补进你的
+  `data\.config.yaml`（官方强调逐个键迁移，别整份覆盖）。
+- `依赖清单已变` → 进 xiaozhi 的环境执行 `pip install -r requirements.txt`。
+
+若报 `语音模型丢失`，重新下载 `model.pt` 放回 `models\SenseVoiceSmall`。
