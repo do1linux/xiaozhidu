@@ -247,6 +247,8 @@ cd D:\ai-mcp\xiaozhidu
 私有仓的 HTTPS 免密格式必须是 `用户名:令牌`，只写令牌不行。`.env` 与 `config\xiaogpt.yaml` 在 `.gitignore` 里，**永远不提交**。
 
 > 本仓库由 `xiaozhidu` 改造而来：顶层原有的 `mcp_pipe.py`、`music.py`、`ximalaya.py`、`requirements.txt` 与 `.github/workflows/` 全部保留，原说明归档为 `README_xiaozhidu.md`。新链路代码在 `bridge/`、`bot/`、`scripts/`。
+>
+> 注意：`.github/workflows/` 只在 GitHub Actions 侧执行，本仓库托管在 Gitee 时这些定时任务不会运行；`music.py` / `ximalaya.py` 需要手动启动或另行配置调度。
 
 ### 2. 一次性初始化（管理员 PowerShell）
 
