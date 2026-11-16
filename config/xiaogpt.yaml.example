@@ -18,6 +18,7 @@ bot_options:
   mute_before_tts: true       # 播报前先让小爱停止（它刚可能回了"没找到"）
   pre_tts_delay: 0.6          # 留一点尾音时间，避免两路声音打架
   tts_chunk: 80               # 单次 TTS 字数上限
+  tts_char_delay_ms: 190      # 每字朗读耗时（毫秒），段间等待 = 字数 × 此值
   min_query_len: 2            # 短于此长度的识别结果直接忽略（"嗯""啊"）
   startup_ping: true
   skip_queries:

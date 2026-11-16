@@ -38,7 +38,7 @@ DEFAULTS = {
     "mute_before_tts": True,
     "pre_tts_delay": 0.6,
     "tts_chunk": 80,
-    "tts_speed": 0.19,          # 每秒朗读字数估算，用于两段之间留间隔
+    "tts_char_delay_ms": 190,   # 每字朗读耗时（毫秒）；两段 TTS 之间按字数留间隔
     "min_query_len": 2,
     "max_tts_chars": 300,
     "heartbeat_minutes": 30,
@@ -309,6 +309,22 @@ class XiaoaiBot:
 
     # -- 播报 -----------------------------------------------------
 
+def tts_wait_seconds(chunk: str, char_delay_ms) -> float:
+    """按字数计算两段 TTS 之间的等待秒数。
+
+    历史 bug：这里原本是 ``len(chunk) / tts_speed``，speed 默认 0.19，
+    80 字会算出 421 秒（7 分钟）——把「每字秒数」当成了「每秒字数」又做了除法。
+    正确语义是每字约 190ms，80 字约 15 秒，与小爱实际朗读节奏一致。
+    """
+    try:
+        delay = float(char_delay_ms)
+    except (TypeError, ValueError):
+        delay = 190.0
+    if delay <= 0:
+        return 0.0
+    return len(chunk) * delay / 1000.0
+
+
     async def speak(self, text: str) -> None:
         delay = float(self.opts["pre_tts_delay"])
         if delay:
@@ -327,7 +343,7 @@ class XiaoaiBot:
             except Exception as e:
                 log.warning("TTS 下发失败：%s", type(e).__name__)
                 break
-            await asyncio.sleep(len(chunk) / float(self.opts["tts_speed"]))
+            await asyncio.sleep(tts_wait_seconds(chunk, self.opts["tts_char_delay_ms"]))
 
     def stats_line(self) -> str:
         s = self.stats

@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from xiaoai_bot import XiaoaiBot, split_for_tts  # noqa: E402
+from xiaoai_bot import XiaoaiBot, split_for_tts, tts_wait_seconds  # noqa: E402
 
 
 def make_bot(**opts) -> XiaoaiBot:
@@ -135,3 +135,21 @@ def test_payload_shape_sent_to_bridge():
     assert sent["query"] == "开灯"
     assert sent["session_id"] == "xiaoai-dev123"
     assert sent["device_id"] == "dev123"
+
+
+# ---- TTS 段间等待：锁死「每字秒数」语义，防止再退化成除法 -----------------
+
+def test_tts_wait_scales_with_length_not_divides():
+    # 80 字 * 190ms = 15.2 秒；旧实现 len/0.19 = 421 秒，差 27 倍
+    wait = tts_wait_seconds("汉" * 80, 190)
+    assert abs(wait - 15.2) < 0.001
+
+
+def test_tts_wait_respects_custom_delay():
+    assert abs(tts_wait_seconds("12345", 100) - 0.5) < 0.001
+
+
+def test_tts_wait_zero_and_bad_delay_are_safe():
+    assert tts_wait_seconds("任意文本", 0) == 0.0
+    # 非法配置回退到默认 190ms，不抛异常
+    assert abs(tts_wait_seconds("abc", "bad") - 0.57) < 0.001

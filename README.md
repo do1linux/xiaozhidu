@@ -236,6 +236,14 @@ cd bot && pip install -r requirements.txt && pytest -q         # 9 passed
 
 服务器上不需要 Docker、不需要 ESP32、不开放任何入站端口。三个前提：**Git for Windows**、**Python 3.10+**、**nssm**（注册系统服务，避免黑窗口）。
 
+其中 nssm 需先装好并放进 PATH，否则 `install_services.bat` 会在开头直接报错退出。最省事的方式是用 winget：
+
+```powershell
+winget install --id NSSM.NSSM -e
+```
+
+装完重开一个管理员 PowerShell（让 PATH 生效），再跑初始化脚本。没有 winget 就手动下载 nssm 解压，把 `win64` 目录加进系统 PATH。
+
 ### 1. 拉代码
 
 ```powershell
