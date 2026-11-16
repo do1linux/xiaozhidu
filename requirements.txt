@@ -6,5 +6,6 @@ mcp>=1.0.0,<2
 requests>=2.31.0
 # Windows 无系统时区库，zoneinfo 需要 tzdata（mcp_servers/free_tools.py 的时区工具）
 tzdata>=2024.1; platform_system == "Windows"
-# ximalaya.py 用 playsound 播放下载的音频；原仓库从未列入依赖，裸机安装后必崩
-playsound>=1.3.0
+# ximalaya.py 与台湾腔本地播报（local_tts.py）都用它播放本地 mp3。
+# 锁 1.2.2：1.3.0 在 Windows 播放本地文件路径有已知问题；两个模块共用同一版本避免冲突
+playsound==1.2.2; platform_system == "Windows"

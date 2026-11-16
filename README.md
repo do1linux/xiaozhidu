@@ -55,7 +55,8 @@ voice-bridge/
 │   └── tests/                  35 个用例，含一个假 xiaozhi 服务器
 ├── bot/
 │   ├── xiaoai_bot.py           小爱侧常驻进程（miservice 直连）
-│   └── tests/                  9 个用例，不需要真音箱
+│   ├── local_tts.py            本地播报：edge-tts 台湾腔等音色合成 + 声卡播放
+│   └── tests/                  17 个用例，不需要真音箱
 ├── prompts/
 │   ├── xiaozhi_system_prompt.txt  贴到 xiaozhi 的 system prompt
 │   └── native_keywords.txt        规则快筛白名单（正则）
@@ -393,3 +394,75 @@ xiaozhi 服务端（`xinnan-tech/xiaozhi-esp32-server`）迭代很快。本节�
 - `依赖清单已变` → 进 xiaozhi 的环境执行 `pip install -r requirements.txt`。
 
 若报 `语音模型丢失`，重新下载 `model.pt` 放回 `models\SenseVoiceSmall`。
+
+---
+
+## 十、台湾腔女声（本地 edge-tts 播报）
+
+小爱的音色由小米云决定，链路里改不了——只要回答从小爱音箱出，就永远是小爱原声。
+想要台湾腔，就得把**回答的播报出口搬到 PC 本地**，用微软免费的 edge-tts 合成、
+电脑声卡播放：
+
+```
+小爱音箱：仍负责 唤醒 / 听写 / 开灯放歌等原生指令
+PC 声卡 ：只念大模型的回答（台湾腔女声）
+```
+
+两条声音链路是**分开**的，这是唯一能换音色的办法。代价是回答从电脑出，
+不是从音箱出；电脑得一直开着且接着音箱。
+
+### 1. 开启
+
+改 `config\xiaogpt.yaml`：
+
+```yaml
+tts_backend: edge                  # 默认 mi；改成 edge 即走本地播报
+tts_voice: zh-TW-HsiaoChenNeural   # 台湾腔女声（晓臻）
+tts_rate: "+0%"                    # 想更慢可 -10%
+```
+
+装依赖（含 edge-tts）：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r bot\requirements.txt -r requirements.txt
+```
+
+音色是微软的在线服务，**要联网**；合成失败时 bot 只记警告、不干预，小爱原样可用。
+
+可选音色：
+
+| 音色 | 说明 |
+|---|---|
+| `zh-TW-HsiaoChenNeural` | 台湾腔女声（默认） |
+| `zh-TW-HsiaoYuNeural` | 台湾腔女声，另一音色 |
+| `zh-TW-YunJheNeural` | 台湾腔男声 |
+
+完整列表用 `python -c "import edge_tts; print(edge_tts.list_voices())"` 查（Linux 下）。
+
+### 2. Windows 服务模式的坑（重要）
+
+nssm 注册的服务跑在 **Session 0，默认没有声卡**，本地播放会静默失败。
+不是代码问题，是 Windows 服务隔离。两个解法：
+
+- **推荐**：别把 `VbXiaoai` 注册成服务，改成「任务计划程序 → 登录时启动」，
+  勾「只在用户登录时运行」，这样进程在用户会话里，能访问声卡。
+- 或者保持 nssm，但在服务的 Advanced 页勾 `Allow service to interact with desktop`
+  （`nssm set VbXiaoai AppDesktopWinsta default`），部分机型可用，不保证。
+
+内测（不接音箱）可跳过这步——合成与播放逻辑都有注入测试，不依赖真声卡：
+
+```bash
+cd bot && pytest -q        # 17 passed
+```
+
+### 3. 为什么不直接让小爱播台湾腔
+
+试过也查过：小米云的 TTS 音色是服务端固定的，桥只送文本，控制不了音色。
+要换音色只有搬出口这一条路。如果哪天你决定音色不重要、想要声音统一从音箱出，
+把 `tts_backend` 改回 `mi` 即可，其他不用动。
+
+### 4. 段间等待
+
+edge 模式整段合成播放，不分段，因此**不**使用 `tts_chunk` 和
+`tts_char_delay_ms`——这两个只作用于 mi 模式的段间节奏。回答长度仍受
+`max_tts_chars`（默认 300）限制。

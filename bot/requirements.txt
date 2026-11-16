@@ -2,3 +2,6 @@ miservice_fork==2.9.3
 aiohttp==3.11.11
 httpx==0.28.1
 PyYAML==6.0.2
+# 本地播报音色（台湾腔女声等）。edge 模式才用到，走微软免费 TTS，需联网。
+# playsound 由顶层 requirements.txt 统一声明（ximalaya.py 与 local_tts.py 共用）
+edge-tts>=7.0,<8

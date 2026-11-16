@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from xiaoai_bot import XiaoaiBot, split_for_tts, tts_wait_seconds  # noqa: E402
+from local_tts import EdgeVoice, DEFAULT_VOICE  # noqa: E402
 
 
 def make_bot(**opts) -> XiaoaiBot:
@@ -153,3 +154,103 @@ def test_tts_wait_zero_and_bad_delay_are_safe():
     assert tts_wait_seconds("任意文本", 0) == 0.0
     # 非法配置回退到默认 190ms，不抛异常
     assert abs(tts_wait_seconds("abc", "bad") - 0.57) < 0.001
+
+
+# ---- 本地 edge-tts（台湾腔女声）----------------------------------------------
+
+def test_default_voice_is_taiwanese_female():
+    assert DEFAULT_VOICE == "zh-TW-HsiaoChenNeural"
+
+
+def test_edge_voice_synth_and_player_injected(tmp_path):
+    """合成与播放都注入，验证调用顺序、文本传递与临时文件清理。"""
+    seen = {}
+
+    async def fake_synth(text, path):
+        seen["synth_text"] = text
+        seen["synth_path"] = path
+        with open(path, "wb") as f:
+            f.write(b"fake-mp3")
+
+    async def fake_player(path):
+        seen["played"] = path
+        with open(path, "rb") as f:
+            seen["bytes"] = f.read()
+
+    v = EdgeVoice(synth=fake_synth, player=fake_player)
+    asyncio.run(v.speak("欢迎光临"))
+
+    assert seen["synth_text"] == "欢迎光临"
+    assert seen["played"] == seen["synth_path"]
+    assert seen["bytes"] == b"fake-mp3"
+    # 播完即删，不落用户数据
+    assert not __import__("os").path.exists(seen["synth_path"])
+
+
+def test_edge_voice_forwards_voice_and_rate(tmp_path):
+    """音色/语速等参数要传给注入的合成器默认值之外的路径由实现保证。"""
+    captured = {}
+
+    async def fake_synth(text, path):
+        with open(path, "wb") as f:
+            f.write(b"x")
+
+    async def fake_player(path):
+        pass
+
+    v = EdgeVoice(voice="zh-TW-HsiaoYuNeural", rate="+10%",
+                  synth=fake_synth, player=fake_player)
+    assert v.voice == "zh-TW-HsiaoYuNeural"
+    assert v.rate == "+10%"
+    asyncio.run(v.speak("你好"))
+
+
+def test_bot_edge_backend_uses_local_voice_not_mina():
+    """edge 模式绝不调用小爱播放器（声音从 PC 出，两个出口分家）。"""
+    bot = make_bot(tts_backend="edge", pre_tts_delay=0)
+    called = {"mina": False}
+
+    async def fake_mina(*a, **kw):
+        called["mina"] = True
+
+    bot.mina = type("M", (), {
+        "player_get_status": fake_mina,
+        "player_pause": fake_mina,
+        "text_to_speech": fake_mina,
+    })()
+
+    seen = {}
+
+    async def fake_synth(text, path):
+        seen["text"] = text
+        with open(path, "wb") as f:
+            f.write(b"x")
+
+    async def fake_player(path):
+        seen["played"] = True
+
+    bot._edge_voice = EdgeVoice(synth=fake_synth, player=fake_player)
+    asyncio.run(bot.speak("台湾腔测试"))
+
+    assert seen.get("text") == "台湾腔测试"
+    assert seen.get("played") is True
+    assert called["mina"] is False
+
+
+def test_bot_mi_backend_still_uses_mina():
+    """默认 mi 模式保持原行为：仍走小爱 text_to_speech。"""
+    bot = make_bot(pre_tts_delay=0, tts_chunk=80, tts_char_delay_ms=0)
+    chunks = []
+
+    async def fake_tts(device, chunk):
+        chunks.append(chunk)
+
+    bot.mina = type("M", (), {
+        "player_get_status": staticmethod(lambda *a: None),
+        "player_pause": staticmethod(lambda *a: None),
+        "text_to_speech": staticmethod(fake_tts),
+    })()
+    bot.opts["mute_before_tts"] = False
+
+    asyncio.run(bot.speak("小爱原声"))
+    assert "".join(chunks) == "小爱原声"

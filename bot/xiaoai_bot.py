@@ -23,6 +23,8 @@ import httpx
 import yaml
 from miservice import MiAccount, MiIOService, MiNAService
 
+from local_tts import EdgeVoice
+
 log = logging.getLogger("xiaoai")
 
 CONVERSATION_API = (
@@ -39,6 +41,12 @@ DEFAULTS = {
     "pre_tts_delay": 0.6,
     "tts_chunk": 80,
     "tts_char_delay_ms": 190,   # 每字朗读耗时（毫秒）；两段 TTS 之间按字数留间隔
+    # 播报出口：mi = 小爱自带音色（默认）；edge = PC 本地 edge-tts，可指定台湾腔等音色
+    "tts_backend": "mi",
+    "tts_voice": "zh-TW-HsiaoChenNeural",  # edge 模式音色：台湾腔女声
+    "tts_rate": "+0%",
+    "tts_volume": "+0%",
+    "tts_pitch": "+0Hz",
     "min_query_len": 2,
     "max_tts_chars": 300,
     "heartbeat_minutes": 30,
@@ -79,6 +87,22 @@ def split_for_tts(text: str, limit: int = 80) -> list[str]:
     return [p for p in (x.strip() for x in parts) if p]
 
 
+def tts_wait_seconds(chunk: str, char_delay_ms) -> float:
+    """按字数计算两段 TTS 之间的等待秒数。
+
+    历史 bug：这里原本是 ``len(chunk) / tts_speed``，speed 默认 0.19，
+    80 字会算出 421 秒（7 分钟）——把「每字秒数」当成了「每秒字数」又做了除法。
+    正确语义是每字约 190ms，80 字约 15 秒，与小爱实际朗读节奏一致。
+    """
+    try:
+        delay = float(char_delay_ms)
+    except (TypeError, ValueError):
+        delay = 190.0
+    if delay <= 0:
+        return 0.0
+    return len(chunk) * delay / 1000.0
+
+
 # ------------------------------------------------------------------ 主体
 
 class XiaoaiBot:
@@ -100,6 +124,7 @@ class XiaoaiBot:
         self._seen: list[str] = []
         self._stop = asyncio.Event()
         self._http: httpx.AsyncClient | None = None
+        self._edge_voice: EdgeVoice | None = None
         self.stats = {"native": 0, "tts": 0, "skip": 0, "error": 0, "polls": 0}
 
     # -- 生命周期 -------------------------------------------------
@@ -309,23 +334,15 @@ class XiaoaiBot:
 
     # -- 播报 -----------------------------------------------------
 
-def tts_wait_seconds(chunk: str, char_delay_ms) -> float:
-    """按字数计算两段 TTS 之间的等待秒数。
-
-    历史 bug：这里原本是 ``len(chunk) / tts_speed``，speed 默认 0.19，
-    80 字会算出 421 秒（7 分钟）——把「每字秒数」当成了「每秒字数」又做了除法。
-    正确语义是每字约 190ms，80 字约 15 秒，与小爱实际朗读节奏一致。
-    """
-    try:
-        delay = float(char_delay_ms)
-    except (TypeError, ValueError):
-        delay = 190.0
-    if delay <= 0:
-        return 0.0
-    return len(chunk) * delay / 1000.0
-
-
     async def speak(self, text: str) -> None:
+        backend = str(self.opts.get("tts_backend", "mi")).lower()
+        if backend == "edge":
+            await self._speak_edge(text)
+        else:
+            await self._speak_mi(text)
+
+    async def _speak_mi(self, text: str) -> None:
+        """小爱自带音色：先让它闭嘴，再分段下发，段间按字数留间隔。"""
         delay = float(self.opts["pre_tts_delay"])
         if delay:
             await asyncio.sleep(delay)
@@ -344,6 +361,21 @@ def tts_wait_seconds(chunk: str, char_delay_ms) -> float:
                 log.warning("TTS 下发失败：%s", type(e).__name__)
                 break
             await asyncio.sleep(tts_wait_seconds(chunk, self.opts["tts_char_delay_ms"]))
+
+    async def _speak_edge(self, text: str) -> None:
+        """本地 edge-tts：声音从 PC 声卡出，不碰小爱播放器，无需 mute。"""
+        if self._edge_voice is None:
+            self._edge_voice = EdgeVoice(
+                voice=self.opts.get("tts_voice"),
+                rate=self.opts.get("tts_rate"),
+                volume=self.opts.get("tts_volume"),
+                pitch=self.opts.get("tts_pitch"),
+            )
+        text = text[: int(self.opts["max_tts_chars"])]
+        try:
+            await self._edge_voice.speak(text)
+        except Exception as e:
+            log.warning("本地 TTS 失败（%s）：%s", type(e).__name__, e)
 
     def stats_line(self) -> str:
         s = self.stats

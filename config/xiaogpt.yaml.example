@@ -6,10 +6,22 @@ password: "<小米密码>"
 cookie: ""
 mi_did: ""              # 留空自动探测；多台音箱时建议填 MIoT DID
 
-# ===== 播报方式 =====
+# ===== 播报方式（小爱账号侧，本链路不直接使用，保留兼容） =====
 tts: mi                 # mi = 小爱自带 TTS；也可 edge/openai（音色更好但更慢）
 use_command: false      # 老设备 TTS 走 miIO 指令时才需要 true
 verbose: false
+
+# ===== 播报出口（本链路真正读取） =====
+#   mi   = 小爱音箱原声（默认）。声音从小爱出，音色不可自定义。
+#   edge = PC 本地 edge-tts 播报。声音从电脑声卡出，可选台湾腔等音色；
+#          小爱仍负责唤醒/听写/原生指令，只是不再念大模型的回答。
+#          需在本机安装 bot/requirements.txt（含 edge-tts），且需联网。
+tts_backend: mi
+tts_voice: zh-TW-HsiaoChenNeural   # edge 音色：台湾腔女声（晓臻）
+                                    # 其他可选：zh-TW-HsiaoYuNeural / zh-TW-YunJheNeural(男)
+tts_rate: "+0%"                     # 语速，如 +10% / -10%
+tts_volume: "+0%"                   # 音量
+tts_pitch: "+0Hz"                   # 音调
 
 # ===== 桥接参数（本文件由 bot/xiaoai_bot.py 读取）=====
 bot_options:
