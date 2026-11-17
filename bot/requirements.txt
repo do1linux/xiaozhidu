@@ -1,7 +1,13 @@
 miservice_fork==2.9.3
-aiohttp==3.11.11
+# aiohttp 3.13.0 起才支持 Python 3.14（此前版本无 cp314 wheel，会退化成源码编译并在 Windows 失败）。
+# 老 Python 继续用锁定的 3.11.11；3.14+ 用 >=3.13.2（自动选带 wheel 的新版，如 3.14.5）。
+aiohttp==3.11.11; python_version < "3.14"
+aiohttp>=3.13.2,<4; python_version >= "3.14"
 httpx==0.28.1
-PyYAML==6.0.2
+# PyYAML 6.0.3（2025）是 6.0.2 的补丁版，API 完全兼容，且提供 cp314 wheel；
+# 6.0.2 无 cp314 wheel，在 Python 3.14 上会源码编译。同样按版本分流。
+PyYAML==6.0.2; python_version < "3.14"
+PyYAML==6.0.3; python_version >= "3.14"
 # 本地播报音色（台湾腔女声等）。edge 模式才用到，走微软免费 TTS，需联网。
 # playsound 由顶层 requirements.txt 统一声明（ximalaya.py 与 local_tts.py 共用）
 edge-tts>=7.0,<8
