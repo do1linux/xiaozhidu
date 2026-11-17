@@ -40,7 +40,9 @@ class State:
         self.sessions = SessionStore()
         self.recent: deque = deque(maxlen=max(10, s.recent_buffer))
         self._log_path = os.path.join(s.log_dir, "bridge.jsonl")
-        os.makedirs(s.log_dir, exist_ok=True)
+        # 零日志模式：连目录都不建，彻底不留盘
+        if self.settings.log_enabled:
+            os.makedirs(s.log_dir, exist_ok=True)
 
     def record(self, item: dict) -> None:
         safe = dict(item)
@@ -54,6 +56,9 @@ class State:
                     safe[k + "_len"] = len(str(safe[k]))
                     del safe[k]
         self.recent.append(safe)
+        # 近期对话仍留内存（供多轮/排障接口用），只是不落盘
+        if not self.settings.log_enabled:
+            return
         try:
             with open(self._log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(safe, ensure_ascii=False) + "\n")

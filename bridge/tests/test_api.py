@@ -180,6 +180,22 @@ def test_log_default_never_writes_text(client, tmp_path):
     assert "tts_reply" in written
 
 
+def test_log_disabled_never_writes_file(client, tmp_path):
+    """LOG_ENABLED=false：连元数据都不落盘，只在内存 recent 里留着。"""
+    st = app.state.st
+    st._log_path = str(tmp_path / "bridge.jsonl")
+    old = st.settings.log_enabled
+    st.settings.log_enabled = False
+    try:
+        set_adapters(client, FakeAdapter('{"type":"tts_reply","content":"回答"}'))
+        client.post("/api/text_chat", json={"query": "随便问问天气怎样", "session_id": "nolog"})
+        assert not (tmp_path / "bridge.jsonl").exists()
+        # 内存缓冲不受影响，多轮/排障仍可用
+        assert st.recent
+    finally:
+        st.settings.log_enabled = old
+
+
 def test_log_text_opt_in(client, tmp_path):
     st = app.state.st
     st._log_path = str(tmp_path / "bridge.jsonl")

@@ -190,6 +190,8 @@ class Settings:
     # 默认只落判定元数据，不落用户 ASR 原文与模型回答正文。
     # 需要逐句排障时显式打开 LOG_TEXT=true，日志属本机临时数据，用完即清。
     log_text: bool = field(default_factory=lambda: _env_bool("LOG_TEXT", False))
+    # 总开关：false 时连判定元数据也不落盘（一键部署默认关闭，做到零日志留存）。
+    log_enabled: bool = field(default_factory=lambda: _env_bool("LOG_ENABLED", True))
     log_dir: str = field(
         default_factory=lambda: _env("LOG_DIR", str(REPO_ROOT / "logs"))
     )
