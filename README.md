@@ -25,7 +25,7 @@
         ┌────────────┴─────────────┐
         │ ③规则快筛（0ms）          │ ④否则交给上游
         │ 明确是设备控制→native     │    xiaozhi_ws（虚拟设备，吃 MCP/记忆）
-        │                          │    → 挂了就降级 newapi（保证有话可答）
+        │                          │    → 挂了就降级 agnes-ai（保证有话可答）
         ▼                          ▼
    ⑤{"type":"native_cmd"}   {"type":"tts_reply","content":"..."}
         │                          │
@@ -36,7 +36,7 @@
 
 - **`bot/`**：只干"听"和"念"。不判断、不理解，纯转发 + 分发。
 - **`bridge/`**：意图闸门 + 协议适配 + 降级 + 可观测。判定逻辑都在这，方便调。
-- **xiaozhi / NewAPI**：大模型与工具能力，跑在原有位置，不动。
+- **xiaozhi / agnes-ai**：xiaozhi 提供工具能力（可选），agnes-ai 是直连大模型兜底。
 
 读云端对话是被动行为：`native_cmd` 分支唯一正确的动作就是什么都不做。
 
@@ -51,7 +51,7 @@ voice-bridge/
 ├── bridge/                     中转桥（FastAPI）
 │   ├── app/main.py             路由、降级链、判定元数据日志
 │   ├── app/intent.py           契约解析 + 规则快筛 + 疑问句护栏 + TTS 清洗
-│   ├── app/adapters/           xiaozhi_ws（虚拟设备）/ xiaozhi_http / newapi
+│   ├── app/adapters/           xiaozhi_ws（虚拟设备）/ xiaozhi_http / agnes
 │   └── tests/                  35 个用例，含一个假 xiaozhi 服务器
 ├── bot/
 │   ├── xiaoai_bot.py           小爱侧常驻进程（miservice 直连）
@@ -80,7 +80,7 @@ voice-bridge/
 ```bash
 cd <部署目录> && git clone <你的仓库地址> && cd voice-bridge
 cp .env.example .env && cp config/xiaogpt.yaml.example config/xiaogpt.yaml
-vim .env                 # 填 NEWAPI_KEY、XIAOZHI_WS_URL
+vim .env                 # 填 AGNES_KEY；连 xiaozhi 时再填 XIAOZHI_WS_URL
 vim config/xiaogpt.yaml  # 填小米账号密码、hardware 型号
 ```
 
@@ -197,7 +197,8 @@ systemctl status voice-bridge-sync
 |---|---|---|
 | 开灯也被念了一遍 | `logs/bridge.jsonl` 的 `reason` | 是 `llm:json` 就往 system prompt 的 native 列表补这句话的说法 |
 | 提问没反应 | 同上 | 是 `fastpath` 就收窄 `native_keywords.txt` 里那条正则 |
-| 每次都很慢（>6s） | `meta.ms` | 换 `NEWAPI_MODEL`；或调小 `XIAOZHI_WS_TIMEOUT` 早点降级 |
+| 每次都很慢（>6s） | `meta.ms` | 换 `AGNES_MODEL`；或调小 `XIAOZHI_WS_TIMEOUT` 早点降级 |
+| 报「只返回 reasoning_content」 | `AGNES_MODEL` | 填了推理模型（如 `agnes-2.5-flash`）；改成 `agnes-3.0-flash` |
 | 播报被截断 | 回答字数与 `tts_chunk` | 调小 `tts_chunk`（默认 80 字） |
 | 桥日志报 `xiaozhi_ws 调用失败` | `docker logs voice-bridge` + xiaozhi 日志 | 检查 device-id 白名单，及 `XIAOZHI_WS_URL` 是否以 `/xiaozhi/v1/` 结尾 |
 | 一直"桥不可用" | `docker compose ps` | bot 会保持不干预，小爱原样可用 |
@@ -238,7 +239,7 @@ cd bot && pip install -r requirements.txt && pytest -q         # 9 passed
 
 ---
 
-## 八、Windows 部署（无 Docker，服务器跑 NewAPI 的同一台机器）
+## 八、Windows 部署（无 Docker，本机直连 agnes-ai）
 
 服务器上不需要 Docker、不需要 ESP32、不开放任何入站端口。三个前提：**Git for Windows**、**Python 3.10+**、**nssm**（注册系统服务，避免黑窗口）。
 
@@ -277,7 +278,7 @@ cd D:\ai-mcp\xiaozhidu
 
 | 文件 | 填什么 |
 |---|---|
-| `.env` | `NEWAPI_KEY`；`XIAOZHI_WS_URL=ws://127.0.0.1:8000/xiaozhi/v1/`（**必须自己带 `/xiaozhi/v1/`**） |
+| `.env` | `AGNES_KEY`（填 agnes-ai 密钥；端点与模型已默认 `https://apihub.agnes-ai.com/v1` / `agnes-3.0-flash`）；连 xiaozhi 时再填 `XIAOZHI_WS_URL=ws://127.0.0.1:8000/xiaozhi/v1/`（**必须自己带 `/xiaozhi/v1/`**） |
 | `config/xiaogpt.yaml` | 小米账号、密码、`hardware`（音箱底部标签，如 LX06） |
 | xiaozhi 后台 | 贴 `prompts/xiaozhi_system_prompt.txt` 进 system prompt；开了设备鉴权就把 `voice-bridge-01` 加白名单 |
 

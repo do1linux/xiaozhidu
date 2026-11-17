@@ -53,7 +53,7 @@ nssm set VbXiaoai DependOnService VbBridge >nul
 
 echo.
 echo [4/4] Registered. This script does NOT fill in secrets. Next steps:
-echo   1. Edit  %REPO%\.env                  (NEWAPI_KEY, XIAOZHI_WS_URL)
+echo   1. Edit  %REPO%\.env                  (AGNES_KEY; XIAOZHI_WS_URL if using xiaozhi)
 echo   2. Edit  %REPO%\config\xiaogpt.yaml   (Mi account, password, hardware)
 echo   3. Login check:
 echo      "%PY%" "%REPO%\bot\xiaoai_bot.py" --check --config "%REPO%\config\xiaogpt.yaml"

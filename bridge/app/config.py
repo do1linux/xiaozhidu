@@ -77,6 +77,15 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw in ("1", "true", "yes", "on", "y")
 
 
+def _env_alias(primary: str, legacy: str, default: str) -> str:
+    """先读新变量名，空则回退旧变量名，再空则用默认值。
+
+    用于 NewAPI → agnes-ai 改名：老 .env 里的 NEWAPI_* 仍然有效，
+    但新部署一律用 AGNES_*，文档与模板也只出现新名。
+    """
+    return _env(primary) or _env(legacy) or default
+
+
 @dataclass
 class Settings:
     # ---- 服务本体 ----
@@ -84,11 +93,11 @@ class Settings:
     port: int = field(default_factory=lambda: _env_int("BRIDGE_PORT", 8100))
 
     # ---- 适配器链：按顺序尝试，前一个失败/超时自动降级到下一个 ----
-    # 可选值: xiaozhi_ws | xiaozhi_http | newapi
+    # 可选值: xiaozhi_ws | xiaozhi_http | agnes（newapi 为其兼容别名）
     adapters: list[str] = field(
         default_factory=lambda: [
             a.strip()
-            for a in _env("ADAPTER_CHAIN", "xiaozhi_ws,newapi").split(",")
+            for a in _env("ADAPTER_CHAIN", "xiaozhi_ws,agnes").split(",")
             if a.strip()
         ]
     )
@@ -123,15 +132,23 @@ class Settings:
         )
     )
 
-    # ---- NewAPI 直连兜底（OpenAI 兼容）----
-    newapi_base: str = field(default_factory=lambda: _env("NEWAPI_BASE", "http://127.0.0.1:3000/v1"))
-    newapi_key: str = field(default_factory=lambda: _env("NEWAPI_KEY", ""))
-    newapi_model: str = field(default_factory=lambda: _env("NEWAPI_MODEL", "gpt-4o-mini"))
-    newapi_timeout: float = field(
-        default_factory=lambda: _env_float("NEWAPI_TIMEOUT", 30.0)
+    # ---- agnes-ai 直连兜底（OpenAI 兼容）----
+    # 兼容旧部署：AGNES_* 为空时回退到 NEWAPI_*。默认端点/模型即 agnes-ai。
+    agnes_base: str = field(
+        default_factory=lambda: _env_alias(
+            "AGNES_BASE", "NEWAPI_BASE", "https://apihub.agnes-ai.com/v1")
     )
-    newapi_use_json_mode: bool = field(
-        default_factory=lambda: _env_bool("NEWAPI_JSON_MODE", True)
+    agnes_key: str = field(
+        default_factory=lambda: _env_alias("AGNES_KEY", "NEWAPI_KEY", "")
+    )
+    agnes_model: str = field(
+        default_factory=lambda: _env_alias("AGNES_MODEL", "NEWAPI_MODEL", "agnes-3.0-flash")
+    )
+    agnes_timeout: float = field(
+        default_factory=lambda: _env_float("AGNES_TIMEOUT", 30.0)
+    )
+    agnes_use_json_mode: bool = field(
+        default_factory=lambda: _env_bool("AGNES_JSON_MODE", True)
     )
     system_prompt_file: str = field(
         default_factory=lambda: _env(
@@ -181,8 +198,8 @@ class Settings:
 
     def as_dict(self) -> dict:
         d = {k: getattr(self, k) for k in self.__dataclass_fields__}
-        if d.get("newapi_key"):
-            d["newapi_key"] = "***"
+        if d.get("agnes_key"):
+            d["agnes_key"] = "***"
         return d
 
 

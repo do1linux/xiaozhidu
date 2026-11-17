@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 
 from ..config import Settings
+from .agnes import AgnesAdapter
 from .base import AdapterError, BaseAdapter, Unsupported
-from .newapi import NewAPIAdapter
 from .xiaozhi_http import XiaozhiHTTPAdapter
 from .xiaozhi_ws import XiaozhiWSAdapter
 
@@ -14,7 +14,7 @@ __all__ = [
     "AdapterError",
     "Unsupported",
     "BaseAdapter",
-    "NewAPIAdapter",
+    "AgnesAdapter",
     "XiaozhiHTTPAdapter",
     "XiaozhiWSAdapter",
     "build_adapters",
@@ -36,14 +36,15 @@ def build_adapters(s: Settings) -> list[BaseAdapter]:
             ))
         elif name == "xiaozhi_http":
             out.append(XiaozhiHTTPAdapter(url=s.xiaozhi_http_url, timeout=s.xiaozhi_ws_timeout))
-        elif name == "newapi":
-            out.append(NewAPIAdapter(
-                base=s.newapi_base,
-                key=s.newapi_key,
-                model=s.newapi_model,
-                timeout=s.newapi_timeout,
+        elif name in ("agnes", "newapi"):
+            # newapi 保留为兼容别名：老 .env 里 ADAPTER_CHAIN=newapi 不必改也能跑。
+            out.append(AgnesAdapter(
+                base=s.agnes_base,
+                key=s.agnes_key,
+                model=s.agnes_model,
+                timeout=s.agnes_timeout,
                 prompt_file=s.system_prompt_file,
-                json_mode=s.newapi_use_json_mode,
+                json_mode=s.agnes_use_json_mode,
                 history_turns=s.history_turns,
             ))
         else:

@@ -1,4 +1,4 @@
-"""中转桥：xiaogpt → 这里 → xiaozhi / NewAPI → 结构化结论。
+"""中转桥：xiaogpt → 这里 → xiaozhi / agnes-ai → 结构化结论。
 
 对外只有一个真正重要的接口：POST /api/text_chat
 响应恒为 {"type":"native_cmd"|"tts_reply","content":"...","meta":{...}}
@@ -136,7 +136,7 @@ async def text_chat(req: ChatReq):
     rtype, content, reason = st.judge.decide(query, upstream)
 
     # 护栏把模型的 native 判定顶掉时，结论是"必须回答"但手里没有答案，
-    # 这时换一个支持强制作答的适配器（newapi）做一次二次判定。
+    # 这时换一个支持强制作答的适配器（agnes）做一次二次判定。
     if rtype == TTS and not content and reason.startswith("guard"):
         try:
             upstream2, adapter2 = await _ask_upstream(
